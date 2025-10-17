@@ -1,0 +1,52 @@
+{
+  "url": "https://example.com/article",
+  "title": "Understanding Web Scraping with AI",
+  "content": "Web scraping has evolved significantly with the integration of artificial intelligence. Modern scraping tools can now intelligently identify and extract meaningful content while filtering out advertisements, navigation elements, and other non-essential components.\n\nThe combination of traditional HTML parsing techniques with AI-powered content analysis provides unprecedented accuracy in content extraction. This approach ensures that only human-readable, valuable content is captured from web pages.\n\nKey benefits include automated content cleaning, intelligent image analysis, and structured data extraction that can be easily integrated into downstream applications.",
+  "images": [
+    {
+      "url": "https://example.com/images/web-scraping-diagram.png",
+      "alt_text": "Web scraping process diagram",
+      "summary": "The image shows a comprehensive diagram illustrating the web scraping process flow. It depicts data moving from web pages through parsing and extraction stages, then being processed by AI for content cleaning and analysis, and finally being output as structured JSON data. The diagram uses blue and green colors to distinguish different processing stages.",
+      "tags": [
+        "diagram",
+        "web-scraping",
+        "data-flow",
+        "process",
+        "technology"
+      ]
+    },
+    {
+      "url": "https://example.com/images/ai-analysis.jpg",
+      "alt_text": "AI analyzing content",
+      "summary": "This image features a stylized representation of artificial intelligence analyzing text content. It shows neural network patterns overlaid on text documents, with highlighted sections indicating extracted content. The visual suggests machine learning capabilities identifying important information from unstructured data. The color scheme emphasizes the digital nature of the process.",
+      "tags": [
+        "artificial-intelligence",
+        "machine-learning",
+        "content-analysis",
+        "nlp",
+        "technology"
+      ]
+    }
+  ],
+  "links": [
+    "https://example.com/",
+    "https://example.com/about",
+    "https://example.com/blog",
+    "https://example.com/documentation",
+    "https://github.com/example/project",
+    "https://api.example.com/docs"
+  ],
+  "fetched_at": "2024-01-15T14:23:45Z",
+  "processing_time_seconds": 8.34,
+  "metadata": {
+    "description": "Learn how modern web scraping combines traditional techniques with AI for intelligent content extraction and analysis.",
+    "keywords": [
+      "web scraping",
+      "artificial intelligence",
+      "content extraction",
+      "data processing"
+    ],
+    "author": "Jane Developer",
+    "published_date": "2024-01-10"
+  }
+}
