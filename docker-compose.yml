@@ -8,13 +8,11 @@ services:
       - "8080:8080"
     volumes:
       - scraper-data:/app/data
-    command: [
-      "./scraper-api",
-      "-addr", ":8080",
-      "-db", "/app/data/scraper.db",
-      "-ollama-url", "http://honker:11434",
-      "-ollama-model", "gpt-oss:20b"
-    ]
+    environment:
+      - PORT=8080
+      - DB_PATH=/app/data/scraper.db
+      - OLLAMA_URL=http://100.64.0.2:11434
+      - OLLAMA_MODEL=gpt-oss:20b
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/health"]

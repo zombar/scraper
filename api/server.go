@@ -82,6 +82,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/health", s.handleHealth)
 	s.mux.HandleFunc("/api/scrape", s.handleScrape)
 	s.mux.HandleFunc("/api/scrape/batch", s.handleBatchScrape)
+	s.mux.HandleFunc("/api/extract-links", s.handleExtractLinks)
 	s.mux.HandleFunc("/api/data/", s.handleData) // Handles /api/data/{id}
 	s.mux.HandleFunc("/api/data", s.handleList)
 }
@@ -202,6 +203,55 @@ func (s *Server) handleScrape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	respondJSON(w, http.StatusOK, result)
+}
+
+// ExtractLinksRequest represents an extract links request
+type ExtractLinksRequest struct {
+	URL string `json:"url"`
+}
+
+// ExtractLinksResponse represents an extract links response
+type ExtractLinksResponse struct {
+	URL   string   `json:"url"`
+	Links []string `json:"links"`
+	Count int      `json:"count"`
+}
+
+// handleExtractLinks handles link extraction and sanitization
+func (s *Server) handleExtractLinks(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req ExtractLinksRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.URL == "" {
+		respondError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+
+	// Extract and sanitize links
+	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	defer cancel()
+
+	links, err := s.scraper.ExtractLinks(ctx, req.URL)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("link extraction failed: %v", err))
+		return
+	}
+
+	response := ExtractLinksResponse{
+		URL:   req.URL,
+		Links: links,
+		Count: len(links),
+	}
+
+	respondJSON(w, http.StatusOK, response)
 }
 
 // BatchScrapeRequest represents a batch scrape request
