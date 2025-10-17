@@ -55,11 +55,6 @@ install:
 # Run all tests
 test:
 	@echo "Running tests..."
-	@go test ./...
-
-# Run tests with verbose output
-test-verbose:
-	@echo "Running tests (verbose)..."
 	@go test -v ./...
 
 # Run tests with coverage
