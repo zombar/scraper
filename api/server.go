@@ -10,27 +10,27 @@ import (
 	"sync"
 	"time"
 
-	"github.com/gurgeh/scraper/db"
-	"github.com/gurgeh/scraper/models"
-	"github.com/gurgeh/scraper/scraper"
+	"github.com/zombar/scraper"
+	"github.com/zombar/scraper/db"
+	"github.com/zombar/scraper/models"
 )
 
 // Server represents the API server
 type Server struct {
-	db       *db.DB
-	scraper  *scraper.Scraper
-	addr     string
-	server   *http.Server
-	mux      *http.ServeMux
+	db          *db.DB
+	scraper     *scraper.Scraper
+	addr        string
+	server      *http.Server
+	mux         *http.ServeMux
 	corsEnabled bool
 }
 
 // Config contains server configuration
 type Config struct {
-	Addr         string
-	DBConfig     db.Config
+	Addr          string
+	DBConfig      db.Config
 	ScraperConfig scraper.Config
-	CORSEnabled  bool
+	CORSEnabled   bool
 }
 
 // DefaultConfig returns default server configuration
@@ -218,20 +218,20 @@ type BatchScrapeResponse struct {
 
 // BatchResult represents a single result in a batch
 type BatchResult struct {
-	URL     string               `json:"url"`
-	Success bool                 `json:"success"`
-	Data    *models.ScrapedData  `json:"data,omitempty"`
-	Error   string               `json:"error,omitempty"`
-	Cached  bool                 `json:"cached"`
+	URL     string              `json:"url"`
+	Success bool                `json:"success"`
+	Data    *models.ScrapedData `json:"data,omitempty"`
+	Error   string              `json:"error,omitempty"`
+	Cached  bool                `json:"cached"`
 }
 
 // BatchSummary provides summary statistics
 type BatchSummary struct {
-	Total     int `json:"total"`
-	Success   int `json:"success"`
-	Failed    int `json:"failed"`
-	Cached    int `json:"cached"`
-	Scraped   int `json:"scraped"`
+	Total   int `json:"total"`
+	Success int `json:"success"`
+	Failed  int `json:"failed"`
+	Cached  int `json:"cached"`
+	Scraped int `json:"scraped"`
 }
 
 // handleBatchScrape handles batch URL scraping
