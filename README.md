@@ -1,15 +1,25 @@
 # Web Scraper with AI Content Processing
 
-A Go-based web scraping tool that leverages a local Ollama instance to intelligently extract and process web content. This tool fetches web pages, extracts meaningful content, analyzes images, and provides structured JSON output.
+A Go-based web scraping tool that leverages a local Ollama instance to intelligently extract and process web content. Available as both a CLI tool and a REST API server with persistent storage. This tool fetches web pages, extracts meaningful content, analyzes images, and provides structured JSON output.
 
 ## Features
 
+### Core Scraping
 - **Intelligent Content Extraction**: Uses AI to identify and extract meaningful human-readable content while filtering out advertisements, navigation menus, and other non-essential elements
 - **Image Analysis**: Processes images with AI vision models to generate summaries and tags
 - **Link Extraction**: Collects all relevant hyperlinks from pages
 - **Metadata Collection**: Extracts page metadata including title, description, keywords, author, and publication date
 - **Performance Metrics**: Tracks fetch and processing time for each operation
 - **JSON Output**: Returns all data in a structured JSON format
+
+### API Server (New!)
+- **REST API**: Full-featured HTTP API for web integration
+- **Persistent Storage**: SQLite database with automatic migrations (PostgreSQL-ready)
+- **Batch Processing**: Process multiple URLs concurrently (up to 50 per request)
+- **Smart Caching**: Automatically returns cached results for previously scraped URLs
+- **UUID-based IDs**: Each result gets a unique identifier for retrieval and deletion
+- **CORS Support**: Ready for web frontend integration
+- **Graceful Shutdown**: Handles interrupts cleanly
 
 ## Requirements
 
@@ -35,14 +45,58 @@ ollama pull llama3.2-vision
 2. Build the application:
 
 ```bash
-# Using Go directly
+# Build CLI tool
 go build -o scraper-bin
 
+# Build API server
+go build -o scraper-api ./cmd/api
+
 # Or using Make
-make build
+make build        # CLI only
+make build-api    # API server only
+make build-both   # Both CLI and API
 ```
 
-## Quick Start with Make
+## Quick Start
+
+### CLI Tool
+
+```bash
+# Using Go directly
+./scraper-bin -url "https://example.com" -pretty
+
+# Using Make
+make run URL=https://example.com
+```
+
+### API Server
+
+```bash
+# Start API server (default port 8080)
+./scraper-api
+
+# Or with custom settings
+./scraper-api -addr :3000 -db ./data/scraper.db
+
+# Using Make
+make run-api
+make run-api PORT=3000 DB=./data/scraper.db
+```
+
+Then use the API:
+```bash
+# Scrape a URL
+curl -X POST http://localhost:8080/api/scrape \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'
+
+# Get health status
+curl http://localhost:8080/health
+```
+
+See [API_SERVER.md](API_SERVER.md) for complete API documentation.
+
+## Make Commands
 
 This project includes a Makefile with convenient shortcuts:
 
@@ -50,29 +104,29 @@ This project includes a Makefile with convenient shortcuts:
 # Show all available commands
 make help
 
-# Build the application
-make build
+# Build commands
+make build        # Build CLI application
+make build-api    # Build API server
+make build-both   # Build both
 
-# Run tests
-make test
+# Run commands
+make run URL=https://example.com              # Run CLI
+make run-api                                  # Run API server
+make run-api PORT=3000 DB=./data/scraper.db  # Run API with custom settings
 
-# Run with coverage report
-make test-coverage
+# Testing
+make test           # Run all tests
+make test-coverage  # Run with coverage report
+make coverage-html  # Generate HTML coverage
 
-# Generate HTML coverage report
-make coverage-html
+# Development
+make clean  # Clean build artifacts
+make check  # Format, vet, and test
+make fmt    # Format code
+make vet    # Run go vet
 
-# Run the scraper (requires URL)
-make run URL=https://example.com
-
-# Clean build artifacts
-make clean
-
-# Format, vet, and test code
-make check
-
-# Build for multiple platforms
-make build-all
+# Cross-compile
+make build-cross  # Build for multiple platforms
 ```
 
 ## Usage
@@ -121,6 +175,7 @@ The tool returns a JSON object with the following structure:
 
 ```json
 {
+  "id": "550e8400-e29b-41d4-a716-446655440000",
   "url": "https://example.com",
   "title": "Page Title",
   "content": "The main content extracted and cleaned by AI...",
@@ -137,7 +192,9 @@ The tool returns a JSON object with the following structure:
     "https://example.com/page2"
   ],
   "fetched_at": "2024-01-01T12:00:00Z",
+  "created_at": "2024-01-01T12:00:00Z",
   "processing_time_seconds": 3.45,
+  "cached": false,
   "metadata": {
     "description": "Page meta description",
     "keywords": ["keyword1", "keyword2"],
@@ -146,6 +203,12 @@ The tool returns a JSON object with the following structure:
   }
 }
 ```
+
+**Key Fields:**
+- `id`: Unique UUID identifier
+- `cached`: `true` if served from cache, `false` if freshly scraped
+- `created_at`: When the data was originally created (useful for detecting stale cache)
+- `fetched_at`: Same as `created_at` for fresh scrapes
 
 ## Architecture
 

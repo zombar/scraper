@@ -37,7 +37,9 @@
     "https://api.example.com/docs"
   ],
   "fetched_at": "2024-01-15T14:23:45Z",
+  "created_at": "2024-01-15T14:23:45Z",
   "processing_time_seconds": 8.34,
+  "cached": false,
   "metadata": {
     "description": "Learn how modern web scraping combines traditional techniques with AI for intelligent content extraction and analysis.",
     "keywords": [

@@ -1,17 +1,20 @@
 # Makefile for Web Scraper
 
-.PHONY: help build test test-verbose test-coverage clean run install lint fmt vet check all
+.PHONY: help build build-api build-cli test test-verbose test-coverage clean run run-api install lint fmt vet check all
 
 # Default target
 help:
 	@echo "Available targets:"
-	@echo "  build          - Build the application"
+	@echo "  build          - Build CLI application"
+	@echo "  build-api      - Build API server"
+	@echo "  build-all      - Build both CLI and API server"
 	@echo "  install        - Build and install to GOPATH/bin"
 	@echo "  test           - Run all tests"
 	@echo "  test-verbose   - Run tests with verbose output"
 	@echo "  test-coverage  - Run tests with coverage report"
 	@echo "  coverage-html  - Generate HTML coverage report"
-	@echo "  run            - Run the application (requires URL variable)"
+	@echo "  run            - Run CLI application (requires URL variable)"
+	@echo "  run-api        - Run API server (optional: PORT, DB variables)"
 	@echo "  clean          - Remove build artifacts"
 	@echo "  fmt            - Format Go code"
 	@echo "  vet            - Run go vet"
@@ -20,15 +23,28 @@ help:
 	@echo "  all            - Run check and build"
 	@echo ""
 	@echo "Examples:"
-	@echo "  make build"
+	@echo "  make build-api"
 	@echo "  make run URL=https://example.com"
+	@echo "  make run-api PORT=3000 DB=./data/scraper.db"
 	@echo "  make test-coverage"
 
-# Build the application
-build:
-	@echo "Building scraper..."
+# Build the CLI application
+build: build-cli
+
+build-cli:
+	@echo "Building CLI scraper..."
 	@go build -o scraper-bin -ldflags="-s -w"
 	@echo "Build complete: scraper-bin"
+
+# Build the API server
+build-api:
+	@echo "Building API server..."
+	@go build -o scraper-api -ldflags="-s -w" ./cmd/api
+	@echo "Build complete: scraper-api"
+
+# Build both
+build-both: build-cli build-api
+	@echo "Both builds complete"
 
 # Install to GOPATH/bin
 install:
@@ -60,8 +76,8 @@ coverage-html:
 	@echo "Opening in browser..."
 	@open coverage.html 2>/dev/null || xdg-open coverage.html 2>/dev/null || echo "Please open coverage.html manually"
 
-# Run the application (requires URL variable)
-run: build
+# Run the CLI application (requires URL variable)
+run: build-cli
 	@if [ -z "$(URL)" ]; then \
 		echo "Error: URL variable is required"; \
 		echo "Usage: make run URL=https://example.com"; \
@@ -69,6 +85,11 @@ run: build
 	fi
 	@echo "Scraping $(URL)..."
 	@./scraper-bin -url "$(URL)" -pretty
+
+# Run the API server
+run-api: build-api
+	@echo "Starting API server..."
+	@./scraper-api $(if $(PORT),-addr :$(PORT)) $(if $(DB),-db $(DB))
 
 # Run with custom options
 run-custom: build
@@ -82,8 +103,9 @@ run-custom: build
 # Clean build artifacts
 clean:
 	@echo "Cleaning..."
-	@rm -f scraper-bin
+	@rm -f scraper-bin scraper-api
 	@rm -f coverage.out coverage.html
+	@rm -f scraper.db scraper.db-journal
 	@echo "Clean complete"
 
 # Format Go code
@@ -141,8 +163,8 @@ verify:
 	@echo "Verifying dependencies..."
 	@go mod verify
 
-# Build for multiple platforms
-build-all:
+# Build for multiple platforms (cross-compile)
+build-cross:
 	@echo "Building for multiple platforms..."
 	@mkdir -p dist
 	@echo "Building for Linux (amd64)..."
