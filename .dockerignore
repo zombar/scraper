@@ -1,0 +1,57 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+scraper-cli
+scraper-api
+scraper-bin
+
+# Test files
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Database files
+*.db
+*.db-shm
+*.db-wal
+
+# Data directories
+data/
+*.json
+
+# Documentation (keep only if needed)
+*.md
+!README.md
+
+# IDE and editor files
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Docker files (already in image)
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+
+# OS files
+Thumbs.db
+
+# Go specific
+vendor/

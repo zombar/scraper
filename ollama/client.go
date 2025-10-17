@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gurgeh/scraper/models"
+	"github.com/zombar/scraper/models"
 )
 
 const (

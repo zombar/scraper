@@ -352,7 +352,7 @@ import (
     "fmt"
     "log"
 
-    "github.com/gurgeh/scraper/scraper"
+    "github.com/zombar/scraper"
 )
 
 func main() {
@@ -394,7 +394,7 @@ result, err := s.Scrape(ctx, "https://example.com")
 ### Direct Ollama Client Usage
 
 ```go
-import "github.com/gurgeh/scraper/ollama"
+import "github.com/zombar/scraper/ollama"
 
 client := ollama.NewClient("http://localhost:11434", "llama3.2")
 

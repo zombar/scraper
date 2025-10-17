@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gurgeh/scraper/models"
+	"github.com/zombar/scraper/models"
 )
 
 func setupTestDB(t *testing.T) *DB {

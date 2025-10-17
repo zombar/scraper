@@ -10,9 +10,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/gurgeh/scraper/api"
-	"github.com/gurgeh/scraper/db"
-	"github.com/gurgeh/scraper/scraper"
+	"github.com/zombar/scraper"
+	"github.com/zombar/scraper/api"
+	"github.com/zombar/scraper/db"
 )
 
 func main() {

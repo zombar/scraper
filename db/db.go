@@ -8,7 +8,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/gurgeh/scraper/models"
+	"github.com/zombar/scraper/models"
 )
 
 // DB wraps the database connection and provides data access methods
