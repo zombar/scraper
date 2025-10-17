@@ -4,13 +4,16 @@ import "time"
 
 // ScrapedData represents the complete output of a web scraping operation
 type ScrapedData struct {
+	ID             string       `json:"id"`
 	URL            string       `json:"url"`
 	Title          string       `json:"title"`
 	Content        string       `json:"content"`
 	Images         []ImageInfo  `json:"images"`
 	Links          []string     `json:"links"`
 	FetchedAt      time.Time    `json:"fetched_at"`
+	CreatedAt      time.Time    `json:"created_at"`
 	ProcessingTime float64      `json:"processing_time_seconds"`
+	Cached         bool         `json:"cached"`
 	Metadata       PageMetadata `json:"metadata"`
 }
 
