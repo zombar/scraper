@@ -227,3 +227,40 @@ func TestAnalyzeImageInvalidJSON(t *testing.T) {
 		t.Errorf("Expected empty tags for non-JSON response, got: %v", tags)
 	}
 }
+
+func TestTruncateString(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		maxLen int
+		want   string
+	}{
+		{
+			name:   "string shorter than max",
+			input:  "short",
+			maxLen: 10,
+			want:   "short",
+		},
+		{
+			name:   "string equal to max",
+			input:  "exactly10c",
+			maxLen: 10,
+			want:   "exactly10c",
+		},
+		{
+			name:   "string longer than max",
+			input:  "this is a very long string",
+			maxLen: 10,
+			want:   "this is a ...",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := truncateString(tt.input, tt.maxLen)
+			if result != tt.want {
+				t.Errorf("truncateString() = %q, want %q", result, tt.want)
+			}
+		})
+	}
+}

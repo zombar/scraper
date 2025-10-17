@@ -15,12 +15,26 @@ import (
 	"github.com/zombar/scraper/db"
 )
 
+// getEnv retrieves an environment variable or returns a default value
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}
+
 func main() {
-	// Command-line flags
-	addr := flag.String("addr", ":8080", "Server address")
-	dbPath := flag.String("db", "scraper.db", "Database file path")
-	ollamaURL := flag.String("ollama-url", "http://localhost:11434", "Ollama base URL")
-	ollamaModel := flag.String("ollama-model", "llama3.2", "Ollama model to use")
+	// Default values
+	defaultAddr := getEnv("PORT", ":8080")
+	defaultDBPath := getEnv("DB_PATH", "scraper.db")
+	defaultOllamaURL := getEnv("OLLAMA_URL", "http://localhost:11434")
+	defaultOllamaModel := getEnv("OLLAMA_MODEL", "llama3.2")
+
+	// Command-line flags (override environment variables)
+	addr := flag.String("addr", defaultAddr, "Server address")
+	dbPath := flag.String("db", defaultDBPath, "Database file path")
+	ollamaURL := flag.String("ollama-url", defaultOllamaURL, "Ollama base URL")
+	ollamaModel := flag.String("ollama-model", defaultOllamaModel, "Ollama model to use")
 	disableCORS := flag.Bool("disable-cors", false, "Disable CORS")
 	flag.Parse()
 

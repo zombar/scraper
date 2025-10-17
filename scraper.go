@@ -2,6 +2,7 @@ package scraper
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -103,8 +104,8 @@ func (s *Scraper) Scrape(ctx context.Context, targetURL string) (*models.Scraped
 	// Extract images
 	images := extractImages(doc, parsedURL)
 
-	// Extract links
-	links := extractLinks(doc, parsedURL)
+	// Extract links with Ollama sanitization
+	links := s.extractLinksWithOllama(ctx, doc, parsedURL, title, content)
 
 	// Extract metadata
 	metadata := extractMetadata(doc)
@@ -125,6 +126,62 @@ func (s *Scraper) Scrape(ctx context.Context, targetURL string) (*models.Scraped
 	}
 
 	return data, nil
+}
+
+// ExtractLinks fetches a URL and returns links using Ollama with fallback to basic extraction
+func (s *Scraper) ExtractLinks(ctx context.Context, targetURL string) ([]string, error) {
+	// Validate URL
+	parsedURL, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return nil, fmt.Errorf("URL must be http or https")
+	}
+
+	// Fetch the page
+	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Scraper/1.0)")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch URL: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP error: %d %s", resp.StatusCode, resp.Status)
+	}
+
+	// Parse HTML
+	doc, err := html.Parse(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse HTML: %w", err)
+	}
+
+	// Extract title
+	title := extractTitle(doc)
+	if title == "" {
+		title = targetURL
+	}
+
+	// Extract text content
+	textContent := extractText(doc)
+
+	// Use Ollama to extract meaningful content
+	content, err := s.ollamaClient.ExtractContent(ctx, textContent)
+	if err != nil {
+		// If Ollama extraction fails, fall back to raw text
+		content = textContent
+	}
+
+	// Extract links with Ollama sanitization and fallback
+	links := s.extractLinksWithOllama(ctx, doc, parsedURL, title, content)
+
+	return links, nil
 }
 
 // extractTitle extracts the page title from the HTML
@@ -203,6 +260,87 @@ func extractImages(n *html.Node, baseURL *url.URL) []models.ImageInfo {
 	}
 	f(n)
 	return images
+}
+
+// extractLinksWithOllama extracts links from HTML and uses Ollama to sanitize them
+func (s *Scraper) extractLinksWithOllama(ctx context.Context, n *html.Node, baseURL *url.URL, pageTitle string, pageContent string) []string {
+	// First extract all links using the basic method
+	allLinks := extractLinks(n, baseURL)
+
+	// Ensure we always return a non-nil slice
+	if allLinks == nil {
+		allLinks = []string{}
+	}
+
+	if len(allLinks) == 0 {
+		return allLinks
+	}
+
+	// Try to sanitize using Ollama directly
+	linksJSON, err := json.Marshal(allLinks)
+	if err != nil {
+		// If marshaling fails, fall back to returning all links
+		return allLinks
+	}
+
+	prompt := fmt.Sprintf(`You are a link filtering assistant. Given a list of URLs extracted from a webpage, identify and return ONLY the links that point to substantive content (articles, blog posts, reports, etc.).
+
+INCLUDE:
+- Article links (news stories, blog posts, features)
+- Opinion pieces and editorials
+- Reports, guides, and documentation
+- Individual story/content pages
+- Links to specific multimedia content (videos, podcasts with their own pages)
+
+EXCLUDE:
+- Advertising/sponsored content links
+- Site navigation (home, sections, categories, topics)
+- Social media share/follow buttons
+- Login/signup/account links
+- Footer links (privacy, terms, about, contact, jobs, press)
+- Newsletter/subscription prompts
+- Cookie/consent notices
+- Generic section/category/tag pages (unless they're the main content)
+- Search functionality links
+- Pagination controls (next, previous, page numbers)
+- Internal site tools (print, save, bookmark)
+- Related external sites/sister publications
+- Comment section links
+
+IMPORTANT: If this is a homepage or news aggregator page, it will contain MANY article links - these should ALL be included as they are the primary content. Only filter out the navigation chrome around them.
+
+Page Title: %s
+
+Page Content: %s
+
+Links to filter:
+%s
+
+Return ONLY a JSON array of the filtered URLs. Do not include any explanation or commentary.
+Format: ["url1", "url2", "url3"]`,
+		pageTitle,
+		pageContent,
+		string(linksJSON))
+
+	response, err := s.ollamaClient.Generate(ctx, prompt)
+	if err != nil {
+		// If Ollama fails, fall back to returning all links
+		return allLinks
+	}
+
+	// Parse JSON response
+	var sanitizedLinks []string
+	if err := json.Unmarshal([]byte(response), &sanitizedLinks); err != nil {
+		// If parsing fails, fall back to returning all links
+		return allLinks
+	}
+
+	// Ensure we never return nil
+	if sanitizedLinks == nil {
+		sanitizedLinks = []string{}
+	}
+
+	return sanitizedLinks
 }
 
 // extractLinks extracts links from the HTML
