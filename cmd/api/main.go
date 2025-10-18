@@ -25,13 +25,13 @@ func getEnv(key, defaultValue string) string {
 
 func main() {
 	// Default values
-	defaultAddr := getEnv("PORT", ":8080")
+	defaultPort := getEnv("PORT", "8080")
 	defaultDBPath := getEnv("DB_PATH", "scraper.db")
 	defaultOllamaURL := getEnv("OLLAMA_URL", "http://localhost:11434")
-	defaultOllamaModel := getEnv("OLLAMA_MODEL", "llama3.2")
+	defaultOllamaModel := getEnv("OLLAMA_MODEL", "gpt-oss:20b")
 
 	// Command-line flags (override environment variables)
-	addr := flag.String("addr", defaultAddr, "Server address")
+	port := flag.String("port", defaultPort, "Server port")
 	dbPath := flag.String("db", defaultDBPath, "Database file path")
 	ollamaURL := flag.String("ollama-url", defaultOllamaURL, "Ollama base URL")
 	ollamaModel := flag.String("ollama-model", defaultOllamaModel, "Ollama model to use")
@@ -41,7 +41,7 @@ func main() {
 
 	// Create server configuration
 	config := api.Config{
-		Addr: *addr,
+		Addr: ":" + *port,
 		DBConfig: db.Config{
 			Driver: "sqlite",
 			DSN:    *dbPath,

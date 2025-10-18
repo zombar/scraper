@@ -78,11 +78,11 @@ func TestGetEnvWithRealEnvVars(t *testing.T) {
 		{
 			name: "PORT environment variable",
 			envVars: map[string]string{
-				"PORT": ":9090",
+				"PORT": "9090",
 			},
 			key:          "PORT",
-			defaultValue: ":8080",
-			want:         ":9090",
+			defaultValue: "8080",
+			want:         "9090",
 		},
 		{
 			name: "DB_PATH environment variable",
@@ -108,7 +108,7 @@ func TestGetEnvWithRealEnvVars(t *testing.T) {
 				"OLLAMA_MODEL": "llama3.1",
 			},
 			key:          "OLLAMA_MODEL",
-			defaultValue: "llama3.2",
+			defaultValue: "gpt-oss:20b",
 			want:         "llama3.1",
 		},
 	}
