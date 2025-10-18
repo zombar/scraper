@@ -77,9 +77,20 @@ Content-Type: application/json
     "keywords": ["example", "domain"],
     "author": "Example Author",
     "published_date": "2024-01-15"
+  },
+  "score": {
+    "url": "https://example.com",
+    "score": 0.85,
+    "reason": "High-quality informative content suitable for knowledge database",
+    "categories": ["informational", "reference"],
+    "is_recommended": true,
+    "malicious_indicators": [],
+    "ai_used": true
   }
 }
 ```
+
+**Note:** The `score` field contains quality assessment of the scraped content (0.0-1.0 scale). Uses AI-powered scoring when Ollama is available, otherwise falls back to rule-based heuristics. Always present unless service fails.
 
 **Example:**
 ```bash
@@ -349,6 +360,147 @@ curl "http://localhost:8080/api/data?limit=20&offset=20"
 
 ---
 
+### Score Link Content
+
+Score a URL to determine if it should be ingested into the database. Uses AI to assess content quality and identify potentially malicious, spam, or inappropriate content.
+
+**Request:**
+```http
+POST /api/score
+Content-Type: application/json
+
+{
+  "url": "https://example.com/article"
+}
+```
+
+**Parameters:**
+- `url` (string, required) - URL to score
+
+**Response:**
+```json
+{
+  "url": "https://example.com/article",
+  "score": {
+    "url": "https://example.com/article",
+    "score": 0.85,
+    "reason": "High quality technical article with educational content",
+    "categories": ["technical", "education"],
+    "is_recommended": true,
+    "malicious_indicators": [],
+    "ai_used": true
+  }
+}
+```
+
+**Score Field Description:**
+- `score` (float) - Quality score from 0.0 to 1.0, where:
+  - 1.0 = High quality, substantive content
+  - 0.5-0.9 = Moderate quality content
+  - 0.0-0.4 = Low quality or inappropriate content
+- `reason` (string) - Explanation for the assigned score
+- `categories` (array) - Detected content categories (e.g., "news", "social_media", "gambling", "spam")
+- `is_recommended` (boolean) - Whether the link meets the quality threshold for ingestion
+- `malicious_indicators` (array) - Any detected suspicious patterns (e.g., "phishing", "malware", "scam")
+- `ai_used` (boolean) - Whether AI (Ollama) was used for scoring (`true`) or rule-based fallback (`false`)
+
+**Rejected Content Types:**
+- Social media platforms
+- Gambling websites
+- Adult content / pornography
+- Drug marketplaces
+- Forums and chatrooms (except high-quality technical forums)
+- General marketplaces
+- Spam and clickbait
+- Malicious websites
+
+**Accepted Content Types:**
+- News articles and journalism
+- Educational content
+- Research papers
+- Technical documentation
+- Blog posts with substantive content
+- Government and official resources
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/score \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com/article"}'
+```
+
+**Low Score Example Response:**
+```json
+{
+  "url": "https://facebook.com",
+  "score": {
+    "url": "https://facebook.com",
+    "score": 0.1,
+    "reason": "Rule-based: Social media platform - not suitable for content ingestion",
+    "categories": ["social_media"],
+    "is_recommended": false,
+    "malicious_indicators": [],
+    "ai_used": false
+  }
+}
+```
+
+**Malicious Content Example:**
+```json
+{
+  "url": "https://suspicious-site.com",
+  "score": {
+    "url": "https://suspicious-site.com",
+    "score": 0.05,
+    "reason": "Suspected phishing site with misleading content",
+    "categories": ["malicious", "spam"],
+    "is_recommended": false,
+    "malicious_indicators": ["phishing", "suspicious_url"],
+    "ai_used": true
+  }
+}
+```
+
+---
+
+### Extract Links
+
+Extract and sanitize links from a URL using AI filtering.
+
+**Request:**
+```http
+POST /api/extract-links
+Content-Type: application/json
+
+{
+  "url": "https://example.com"
+}
+```
+
+**Parameters:**
+- `url` (string, required) - URL to extract links from
+
+**Response:**
+```json
+{
+  "url": "https://example.com",
+  "links": [
+    "https://example.com/article-1",
+    "https://example.com/article-2"
+  ],
+  "count": 2
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/extract-links \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'
+```
+
+---
+
 ## Data Types
 
 ### ScrapedData
@@ -419,6 +571,31 @@ type PageMetadata struct {
     PublishedDate string   `json:"published_date,omitempty"`
 }
 ```
+
+### LinkScore
+
+Quality assessment and scoring for a URL.
+
+```go
+type LinkScore struct {
+    URL                 string   `json:"url"`
+    Score               float64  `json:"score"`              // 0.0 to 1.0
+    Reason              string   `json:"reason"`
+    Categories          []string `json:"categories"`
+    IsRecommended       bool     `json:"is_recommended"`
+    MaliciousIndicators []string `json:"malicious_indicators,omitempty"`
+    AIUsed              bool     `json:"ai_used"`
+}
+```
+
+**Fields:**
+- `url` - The URL that was scored
+- `score` - Quality score from 0.0 (lowest) to 1.0 (highest)
+- `reason` - Explanation for the assigned score
+- `categories` - Content categories detected (e.g., "news", "technical", "social_media", "spam")
+- `is_recommended` - Whether the URL meets the quality threshold for ingestion
+- `malicious_indicators` - Any suspicious patterns detected (e.g., "phishing", "malware")
+- `ai_used` - Whether AI (Ollama) was used for scoring (`true`) or rule-based fallback (`false`)
 
 ---
 
@@ -576,22 +753,32 @@ curl -X DELETE http://localhost:8080/api/data/550e8400-e29b-41d4-a716-4466554400
 ./scraper-api [flags]
 ```
 
-- `-addr string` - Server address (default: ":8080")
+- `-port string` - Server port (default: "8080")
 - `-db string` - Database file path (default: "scraper.db")
 - `-ollama-url string` - Ollama base URL (default: "http://localhost:11434")
-- `-ollama-model string` - Ollama model (default: "llama3.2")
+- `-ollama-model string` - Ollama model (default: "gpt-oss:20b")
+- `-link-score-threshold float` - Minimum score for link recommendation (default: 0.5)
 - `-disable-cors` - Disable CORS (enabled by default)
+- `-disable-image-analysis` - Disable AI-powered image analysis
 
 ### Environment Variables
 
 For production deployments, use environment variables:
 
 ```bash
-export SCRAPER_ADDR=":8080"
-export SCRAPER_DB="scraper.db"
-export SCRAPER_OLLAMA_URL="http://localhost:11434"
-export SCRAPER_OLLAMA_MODEL="llama3.2"
+export PORT="8080"
+export DB_PATH="scraper.db"
+export OLLAMA_URL="http://localhost:11434"
+export OLLAMA_MODEL="gpt-oss:20b"
+export LINK_SCORE_THRESHOLD="0.5"
 ```
+
+**Configuration Options:**
+- `PORT` - Server port number
+- `DB_PATH` - Path to SQLite database file
+- `OLLAMA_URL` - Base URL for Ollama API server
+- `OLLAMA_MODEL` - Name of the Ollama model to use for AI features
+- `LINK_SCORE_THRESHOLD` - Minimum quality score (0.0-1.0) for recommending a link for ingestion (default: 0.5)
 
 ---
 
