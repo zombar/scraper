@@ -70,7 +70,7 @@ func NewServer(config Config) (*Server, error) {
 		Addr:         config.Addr,
 		Handler:      s.middleware(s.mux),
 		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 120 * time.Second,
+		WriteTimeout: 15 * time.Minute, // Allow time for long-running scrapes
 		IdleTimeout:  120 * time.Second,
 	}
 
@@ -187,7 +187,7 @@ func (s *Server) handleScrape(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Scrape the URL
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
 	result, err := s.scraper.Scrape(ctx, req.URL)
@@ -236,7 +236,7 @@ func (s *Server) handleExtractLinks(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Extract and sanitize links
-	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Minute)
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
 	defer cancel()
 
 	links, err := s.scraper.ExtractLinks(ctx, req.URL)
@@ -368,7 +368,7 @@ func (s *Server) processSingleURL(ctx context.Context, url string, force bool) B
 	}
 
 	// Scrape the URL
-	scrapeCtx, cancel := context.WithTimeout(ctx, 2*time.Minute)
+	scrapeCtx, cancel := context.WithTimeout(ctx, 10*time.Minute)
 	defer cancel()
 
 	result, err := s.scraper.Scrape(scrapeCtx, url)

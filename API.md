@@ -1,60 +1,319 @@
-# API Documentation
+# Scraper API Reference
 
-This document provides detailed information about the internal APIs and packages.
+REST API documentation for the web scraper service.
 
-## Package: `models`
+## Base URL
 
-### Types
+```
+http://localhost:8080
+```
 
-#### `ScrapedData`
+## Endpoints
 
-The main output structure containing all scraped and processed data.
+### Health Check
+
+Check server status and get database statistics.
+
+**Request:**
+```http
+GET /health
+```
+
+**Response:**
+```json
+{
+  "status": "healthy",
+  "count": 42,
+  "time": "2024-01-15T14:23:45Z"
+}
+```
+
+---
+
+### Scrape Single URL
+
+Scrape a single URL. Returns cached result if previously scraped.
+
+**Request:**
+```http
+POST /api/scrape
+Content-Type: application/json
+
+{
+  "url": "https://example.com",
+  "force": false
+}
+```
+
+**Parameters:**
+- `url` (string, required) - URL to scrape
+- `force` (boolean, optional) - Bypass cache and re-scrape (default: false)
+
+**Response:**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "url": "https://example.com",
+  "title": "Example Domain",
+  "content": "AI-cleaned main content...",
+  "images": [
+    {
+      "url": "https://example.com/image.jpg",
+      "alt_text": "Example image",
+      "summary": "AI-generated description...",
+      "tags": ["example", "illustration"]
+    }
+  ],
+  "links": [
+    "https://example.com/about",
+    "https://example.com/contact"
+  ],
+  "fetched_at": "2024-01-15T14:23:45Z",
+  "created_at": "2024-01-15T14:23:45Z",
+  "processing_time_seconds": 8.34,
+  "cached": false,
+  "metadata": {
+    "description": "Example domain description",
+    "keywords": ["example", "domain"],
+    "author": "Example Author",
+    "published_date": "2024-01-15"
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/scrape \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'
+```
+
+---
+
+### Batch Scrape
+
+Scrape multiple URLs concurrently (maximum 50 per request).
+
+**Request:**
+```http
+POST /api/scrape/batch
+Content-Type: application/json
+
+{
+  "urls": [
+    "https://example.com",
+    "https://example.org"
+  ],
+  "force": false
+}
+```
+
+**Parameters:**
+- `urls` (array of strings, required) - URLs to scrape (max 50)
+- `force` (boolean, optional) - Bypass cache for all URLs (default: false)
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "url": "https://example.com",
+      "success": true,
+      "data": { ... },
+      "cached": true
+    },
+    {
+      "url": "https://example.org",
+      "success": true,
+      "data": { ... },
+      "cached": false
+    },
+    {
+      "url": "https://invalid-url",
+      "success": false,
+      "error": "failed to fetch page",
+      "cached": false
+    }
+  ],
+  "summary": {
+    "total": 3,
+    "success": 2,
+    "failed": 1,
+    "cached": 1,
+    "scraped": 1
+  }
+}
+```
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/scrape/batch \
+  -H "Content-Type: application/json" \
+  -d '{
+    "urls": ["https://example.com", "https://example.org"]
+  }'
+```
+
+---
+
+### Get by ID
+
+Retrieve scraped data by UUID.
+
+**Request:**
+```http
+GET /api/data/{id}
+```
+
+**Response:**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "url": "https://example.com",
+  "title": "Page Title",
+  ...
+}
+```
+
+**Error Response (404):**
+```json
+{
+  "error": "data not found"
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/api/data/550e8400-e29b-41d4-a716-446655440000
+```
+
+---
+
+### Delete by ID
+
+Delete scraped data by UUID.
+
+**Request:**
+```http
+DELETE /api/data/{id}
+```
+
+**Response:**
+```json
+{
+  "message": "data deleted successfully"
+}
+```
+
+**Error Response (404):**
+```json
+{
+  "error": "data not found"
+}
+```
+
+**Example:**
+```bash
+curl -X DELETE http://localhost:8080/api/data/550e8400-e29b-41d4-a716-446655440000
+```
+
+---
+
+### List All Data
+
+List all scraped data with pagination.
+
+**Request:**
+```http
+GET /api/data?limit=20&offset=0
+```
+
+**Query Parameters:**
+- `limit` (integer, optional) - Results per page (default: 20, max: 100)
+- `offset` (integer, optional) - Number of results to skip (default: 0)
+
+**Response:**
+```json
+{
+  "data": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "url": "https://example.com",
+      ...
+    }
+  ],
+  "total": 150,
+  "limit": 20,
+  "offset": 0
+}
+```
+
+**Example:**
+```bash
+# First page
+curl "http://localhost:8080/api/data?limit=20&offset=0"
+
+# Second page
+curl "http://localhost:8080/api/data?limit=20&offset=20"
+```
+
+---
+
+## Data Types
+
+### ScrapedData
+
+Main output structure containing all scraped content.
 
 ```go
 type ScrapedData struct {
-    URL            string        `json:"url"`
-    Title          string        `json:"title"`
-    Content        string        `json:"content"`
-    Images         []ImageInfo   `json:"images"`
-    Links          []string      `json:"links"`
-    FetchedAt      time.Time     `json:"fetched_at"`
-    ProcessingTime float64       `json:"processing_time_seconds"`
-    Metadata       PageMetadata  `json:"metadata"`
+    ID              string        `json:"id"`
+    URL             string        `json:"url"`
+    Title           string        `json:"title"`
+    Content         string        `json:"content"`
+    Images          []ImageInfo   `json:"images"`
+    Links           []string      `json:"links"`
+    FetchedAt       time.Time     `json:"fetched_at"`
+    CreatedAt       time.Time     `json:"created_at"`
+    ProcessingTime  float64       `json:"processing_time_seconds"`
+    Cached          bool          `json:"cached"`
+    Metadata        PageMetadata  `json:"metadata"`
 }
 ```
 
 **Fields:**
-- `URL`: The scraped URL (may be modified to include scheme)
-- `Title`: Page title extracted from `<title>` tag
-- `Content`: AI-cleaned main content
-- `Images`: Array of image information with AI analysis
-- `Links`: Deduplicated list of all hyperlinks found
-- `FetchedAt`: Timestamp when scraping started
-- `ProcessingTime`: Total time in seconds for the entire operation
-- `Metadata`: Additional page metadata from meta tags
+- `id` - Unique UUID identifier
+- `url` - Scraped URL
+- `title` - Page title from `<title>` tag
+- `content` - AI-cleaned main content
+- `images` - Array of image information
+- `links` - All extracted hyperlinks
+- `fetched_at` - When content was originally fetched
+- `created_at` - When record was created in database
+- `processing_time_seconds` - Total processing time
+- `cached` - Whether result was served from cache
+- `metadata` - Additional page metadata
 
-#### `ImageInfo`
+### ImageInfo
 
 Information about an extracted image.
 
 ```go
 type ImageInfo struct {
-    URL        string   `json:"url"`
-    AltText    string   `json:"alt_text"`
-    Summary    string   `json:"summary"`
-    Tags       []string `json:"tags"`
-    Base64Data string   `json:"base64_data,omitempty"`
+    URL     string   `json:"url"`
+    AltText string   `json:"alt_text"`
+    Summary string   `json:"summary"`
+    Tags    []string `json:"tags"`
 }
 ```
 
 **Fields:**
-- `URL`: Absolute URL of the image
-- `AltText`: Alt text from the `<img>` tag
-- `Summary`: 4-5 sentence AI-generated description
-- `Tags`: AI-generated tags for categorization
-- `Base64Data`: Base64 encoded image data (omitted from JSON if empty)
+- `url` - Absolute image URL
+- `alt_text` - Alt text from `<img>` tag
+- `summary` - AI-generated 4-5 sentence description
+- `tags` - AI-generated tags for categorization
 
-#### `PageMetadata`
+### PageMetadata
 
 Metadata extracted from HTML meta tags.
 
@@ -67,371 +326,235 @@ type PageMetadata struct {
 }
 ```
 
-All fields use `omitempty` and will be excluded from JSON if empty.
+---
 
-#### `OllamaRequest`
+## Error Responses
 
-Request structure for Ollama API calls.
+All errors return JSON with an `error` field:
 
-```go
-type OllamaRequest struct {
-    Model  string `json:"model"`
-    Prompt string `json:"prompt"`
-    Stream bool   `json:"stream"`
-    Format string `json:"format,omitempty"`
+```json
+{
+  "error": "descriptive error message"
 }
 ```
 
-#### `OllamaResponse`
+**HTTP Status Codes:**
+- `200 OK` - Success
+- `400 Bad Request` - Invalid request parameters
+- `404 Not Found` - Resource not found
+- `405 Method Not Allowed` - Wrong HTTP method
+- `500 Internal Server Error` - Server error
 
-Response structure from Ollama API.
+---
 
-```go
-type OllamaResponse struct {
-    Model     string `json:"model"`
-    CreatedAt string `json:"created_at"`
-    Response  string `json:"response"`
-    Done      bool   `json:"done"`
+## Integration Examples
+
+### JavaScript/TypeScript
+
+```typescript
+// Scrape single URL
+async function scrapeURL(url: string): Promise<ScrapedData> {
+  const response = await fetch('http://localhost:8080/api/scrape', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ url })
+  });
+  return response.json();
+}
+
+// Batch scrape
+async function scrapeBatch(urls: string[]): Promise<BatchResponse> {
+  const response = await fetch('http://localhost:8080/api/scrape/batch', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ urls })
+  });
+  return response.json();
+}
+
+// Get by ID
+async function getByID(id: string): Promise<ScrapedData> {
+  const response = await fetch(`http://localhost:8080/api/data/${id}`);
+  return response.json();
+}
+
+// List all with pagination
+async function listAll(limit = 20, offset = 0): Promise<ListResponse> {
+  const response = await fetch(
+    `http://localhost:8080/api/data?limit=${limit}&offset=${offset}`
+  );
+  return response.json();
+}
+
+// Check cache freshness
+async function checkCacheFreshness(url: string): Promise<void> {
+  const data = await scrapeURL(url);
+  const ageInHours = (Date.now() - new Date(data.created_at).getTime()) / (1000 * 60 * 60);
+
+  if (data.cached && ageInHours > 24) {
+    console.log('Data is stale, re-scraping...');
+    const freshData = await fetch('http://localhost:8080/api/scrape', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, force: true })
+    }).then(res => res.json());
+  }
 }
 ```
 
-#### `OllamaVisionRequest`
+### Python
 
-Vision request structure for image analysis.
+```python
+import requests
 
-```go
-type OllamaVisionRequest struct {
-    Model  string   `json:"model"`
-    Prompt string   `json:"prompt"`
-    Images []string `json:"images"` // base64 encoded
-    Stream bool     `json:"stream"`
-}
+# Scrape single URL
+def scrape_url(url: str, force: bool = False) -> dict:
+    response = requests.post(
+        'http://localhost:8080/api/scrape',
+        json={'url': url, 'force': force}
+    )
+    return response.json()
+
+# Batch scrape
+def scrape_batch(urls: list[str], force: bool = False) -> dict:
+    response = requests.post(
+        'http://localhost:8080/api/scrape/batch',
+        json={'urls': urls, 'force': force}
+    )
+    return response.json()
+
+# Get by ID
+def get_by_id(id: str) -> dict:
+    response = requests.get(f'http://localhost:8080/api/data/{id}')
+    return response.json()
+
+# Delete by ID
+def delete_by_id(id: str) -> dict:
+    response = requests.delete(f'http://localhost:8080/api/data/{id}')
+    return response.json()
+
+# List with pagination
+def list_all(limit: int = 20, offset: int = 0) -> dict:
+    response = requests.get(
+        f'http://localhost:8080/api/data?limit={limit}&offset={offset}'
+    )
+    return response.json()
+```
+
+### cURL
+
+```bash
+# Health check
+curl http://localhost:8080/health
+
+# Scrape URL
+curl -X POST http://localhost:8080/api/scrape \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com"}'
+
+# Force re-scrape
+curl -X POST http://localhost:8080/api/scrape \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://example.com", "force": true}'
+
+# Batch scrape
+curl -X POST http://localhost:8080/api/scrape/batch \
+  -H "Content-Type: application/json" \
+  -d '{"urls": ["https://example.com", "https://example.org"]}'
+
+# Get by ID
+curl http://localhost:8080/api/data/550e8400-e29b-41d4-a716-446655440000
+
+# List with pagination
+curl "http://localhost:8080/api/data?limit=10&offset=0"
+
+# Delete by ID
+curl -X DELETE http://localhost:8080/api/data/550e8400-e29b-41d4-a716-446655440000
 ```
 
 ---
 
-## Package: `ollama`
+## Configuration
 
-### Constants
+### Command-Line Flags
 
-```go
-const (
-    DefaultBaseURL = "http://localhost:11434"
-    DefaultModel   = "llama3.2"
-    DefaultTimeout = 120 * time.Second
-)
+```bash
+./scraper-api [flags]
 ```
 
-### Types
-
-#### `Client`
-
-Client for interacting with Ollama.
-
-```go
-type Client struct {
-    baseURL    string
-    httpClient *http.Client
-    model      string
-}
-```
-
-### Functions
-
-#### `NewClient`
-
-```go
-func NewClient(baseURL, model string) *Client
-```
-
-Creates a new Ollama client. If `baseURL` or `model` are empty strings, defaults are used.
-
-**Example:**
-```go
-client := ollama.NewClient("", "") // Uses defaults
-client := ollama.NewClient("http://custom:11434", "llama3.1")
-```
-
-#### `Generate`
-
-```go
-func (c *Client) Generate(ctx context.Context, prompt string) (string, error)
-```
-
-Sends a text generation request to Ollama.
-
-**Parameters:**
-- `ctx`: Context for cancellation and timeout
-- `prompt`: The prompt to send to the model
-
-**Returns:**
-- `string`: The generated response
-- `error`: Any error that occurred
-
-**Example:**
-```go
-response, err := client.Generate(ctx, "Summarize this text: ...")
-if err != nil {
-    log.Fatal(err)
-}
-```
-
-#### `GenerateWithVision`
-
-```go
-func (c *Client) GenerateWithVision(ctx context.Context, prompt string, imageData []byte) (string, error)
-```
-
-Sends a vision request to Ollama with an image.
-
-**Parameters:**
-- `ctx`: Context for cancellation and timeout
-- `prompt`: The prompt describing what to analyze
-- `imageData`: Raw image bytes
-
-**Returns:**
-- `string`: The vision model's response
-- `error`: Any error that occurred
-
-#### `ExtractContent`
-
-```go
-func (c *Client) ExtractContent(ctx context.Context, rawText string) (string, error)
-```
-
-Uses Ollama to extract meaningful content from HTML text, removing ads and non-essential elements.
-
-**Parameters:**
-- `ctx`: Context for cancellation and timeout
-- `rawText`: The raw text extracted from HTML
-
-**Returns:**
-- `string`: Cleaned content
-- `error`: Any error that occurred
-
-#### `AnalyzeImage`
-
-```go
-func (c *Client) AnalyzeImage(ctx context.Context, imageData []byte, altText string) (summary string, tags []string, err error)
-```
-
-Uses Ollama vision to generate a summary and tags for an image.
-
-**Parameters:**
-- `ctx`: Context for cancellation and timeout
-- `imageData`: Raw image bytes
-- `altText`: Optional alt text for context
-
-**Returns:**
-- `summary`: 4-5 sentence description
-- `tags`: Array of relevant tags
-- `err`: Any error that occurred
-
----
-
-## Package: `scraper`
-
-### Types
-
-#### `Scraper`
-
-Main scraper implementation.
-
-```go
-type Scraper struct {
-    httpClient   *http.Client
-    ollamaClient *ollama.Client
-}
-```
-
-#### `Config`
-
-Configuration for the scraper.
-
-```go
-type Config struct {
-    HTTPTimeout   time.Duration
-    OllamaBaseURL string
-    OllamaModel   string
-    UserAgent     string
-}
-```
-
-**Fields:**
-- `HTTPTimeout`: Timeout for HTTP requests
-- `OllamaBaseURL`: Base URL for Ollama API
-- `OllamaModel`: Model name to use
-- `UserAgent`: User agent string for HTTP requests
-
-### Functions
-
-#### `DefaultConfig`
-
-```go
-func DefaultConfig() Config
-```
-
-Returns a default configuration.
-
-**Defaults:**
-- `HTTPTimeout`: 30 seconds
-- `OllamaBaseURL`: http://localhost:11434
-- `OllamaModel`: llama3.2
-- `UserAgent`: Mozilla/5.0 (compatible; ContentScraper/1.0)
-
-#### `New`
-
-```go
-func New(config Config) *Scraper
-```
-
-Creates a new Scraper instance with the given configuration.
-
-**Example:**
-```go
-config := scraper.DefaultConfig()
-config.HTTPTimeout = 60 * time.Second
-s := scraper.New(config)
-```
-
-#### `Scrape`
-
-```go
-func (s *Scraper) Scrape(ctx context.Context, targetURL string) (*models.ScrapedData, error)
-```
-
-Scrapes a webpage and returns processed data.
-
-**Parameters:**
-- `ctx`: Context for cancellation and timeout
-- `targetURL`: URL to scrape (scheme is optional, defaults to https)
-
-**Returns:**
-- `*models.ScrapedData`: Processed data
-- `error`: Any error that occurred
-
-**Example:**
-```go
-ctx := context.Background()
-result, err := s.Scrape(ctx, "https://example.com")
-if err != nil {
-    log.Fatal(err)
-}
-
-jsonData, _ := json.MarshalIndent(result, "", "  ")
-fmt.Println(string(jsonData))
-```
-
-**Processing Steps:**
-1. Validates and normalizes URL
-2. Fetches HTML content
-3. Parses HTML structure
-4. Extracts title, text, images, links, and metadata
-5. Cleans content using Ollama
-6. Analyzes each image with Ollama vision
-7. Returns structured data with timing information
-
-**Error Handling:**
-- Returns error if URL is invalid
-- Returns error if page fetch fails
-- Returns error if HTML parsing fails
-- Falls back to raw text if AI content cleaning fails
-- Continues with other images if individual image processing fails
-
----
-
-## Usage Examples
-
-### Basic Scraping
-
-```go
-package main
-
-import (
-    "context"
-    "encoding/json"
-    "fmt"
-    "log"
-
-    "github.com/zombar/scraper"
-)
-
-func main() {
-    config := scraper.DefaultConfig()
-    s := scraper.New(config)
-
-    ctx := context.Background()
-    result, err := s.Scrape(ctx, "https://example.com")
-    if err != nil {
-        log.Fatal(err)
-    }
-
-    jsonData, _ := json.MarshalIndent(result, "", "  ")
-    fmt.Println(string(jsonData))
-}
-```
-
-### Custom Configuration
-
-```go
-config := scraper.Config{
-    HTTPTimeout:   60 * time.Second,
-    OllamaBaseURL: "http://custom-host:11434",
-    OllamaModel:   "llama3.1",
-    UserAgent:     "MyBot/1.0",
-}
-s := scraper.New(config)
-```
-
-### With Timeout
-
-```go
-ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-defer cancel()
-
-result, err := s.Scrape(ctx, "https://example.com")
-```
-
-### Direct Ollama Client Usage
-
-```go
-import "github.com/zombar/scraper/ollama"
-
-client := ollama.NewClient("http://localhost:11434", "llama3.2")
-
-// Text generation
-response, err := client.Generate(ctx, "What is Go?")
-
-// Content extraction
-cleaned, err := client.ExtractContent(ctx, rawHTMLText)
-
-// Image analysis
-summary, tags, err := client.AnalyzeImage(ctx, imageBytes, "image alt text")
+- `-addr string` - Server address (default: ":8080")
+- `-db string` - Database file path (default: "scraper.db")
+- `-ollama-url string` - Ollama base URL (default: "http://localhost:11434")
+- `-ollama-model string` - Ollama model (default: "llama3.2")
+- `-disable-cors` - Disable CORS (enabled by default)
+
+### Environment Variables
+
+For production deployments, use environment variables:
+
+```bash
+export SCRAPER_ADDR=":8080"
+export SCRAPER_DB="scraper.db"
+export SCRAPER_OLLAMA_URL="http://localhost:11434"
+export SCRAPER_OLLAMA_MODEL="llama3.2"
 ```
 
 ---
 
-## Error Types
+## Performance
 
-The application uses standard Go errors with descriptive messages. Common error patterns:
+### Batch Processing
 
-- `"invalid URL: ..."` - URL parsing failed
-- `"failed to fetch page: ..."` - HTTP request failed
-- `"failed to parse HTML: ..."` - HTML parsing failed
-- `"ollama returned status XXX: ..."` - Ollama API error
-- `"failed to analyze image: ..."` - Image processing failed
+- Maximum 50 URLs per batch request
+- URLs processed concurrently using goroutines
+- Each URL has 2-minute timeout
+- Failed URLs don't affect successful ones
 
-Always check errors and handle them appropriately:
+### Caching
 
-```go
-result, err := s.Scrape(ctx, url)
-if err != nil {
-    if strings.Contains(err.Error(), "invalid URL") {
-        // Handle invalid URL
-    } else if strings.Contains(err.Error(), "ollama") {
-        // Handle Ollama errors
-    } else {
-        // Handle other errors
-    }
-}
+- URLs deduplicated using database unique constraint
+- Cached results returned instantly
+- Use `force: true` to bypass cache
+- `cached` field indicates cache status
+- `created_at` shows original scrape time
+
+### Database
+
+- Connection pool: 25 max open, 5 idle
+- Connection lifetime: 5 minutes
+- Prepared statements for queries
+- Indexes on url and created_at
+
+### Timeouts
+
+- HTTP read timeout: 30 seconds
+- HTTP write timeout: 120 seconds
+- Idle timeout: 120 seconds
+- Scraping timeout: 2 minutes per URL
+
+---
+
+## Database Schema
+
+### scraped_data Table
+
+```sql
+CREATE TABLE scraped_data (
+    id TEXT PRIMARY KEY,
+    url TEXT NOT NULL UNIQUE,
+    data TEXT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
 ```
+
+### Indexes
+
+- `idx_scraped_data_url` on `url`
+- `idx_scraped_data_created_at` on `created_at`
+
+### Migrations
+
+Migrations are automatically applied on startup using a version-based system tracked in the `schema_migrations` table.
+
+To add new migrations, edit `db/migrations.go` and add to the `migrations` slice.
