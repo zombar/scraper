@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -29,12 +30,21 @@ func main() {
 	defaultDBPath := getEnv("DB_PATH", "scraper.db")
 	defaultOllamaURL := getEnv("OLLAMA_URL", "http://localhost:11434")
 	defaultOllamaModel := getEnv("OLLAMA_MODEL", "gpt-oss:20b")
+	defaultLinkScoreThreshold := getEnv("LINK_SCORE_THRESHOLD", "0.5")
+
+	// Parse link score threshold
+	linkScoreThreshold, err := strconv.ParseFloat(defaultLinkScoreThreshold, 64)
+	if err != nil {
+		log.Printf("Invalid LINK_SCORE_THRESHOLD value, using default 0.5: %v", err)
+		linkScoreThreshold = 0.5
+	}
 
 	// Command-line flags (override environment variables)
 	port := flag.String("port", defaultPort, "Server port")
 	dbPath := flag.String("db", defaultDBPath, "Database file path")
 	ollamaURL := flag.String("ollama-url", defaultOllamaURL, "Ollama base URL")
 	ollamaModel := flag.String("ollama-model", defaultOllamaModel, "Ollama model to use")
+	scoreThreshold := flag.Float64("link-score-threshold", linkScoreThreshold, "Minimum score for link recommendation (0.0-1.0)")
 	disableCORS := flag.Bool("disable-cors", false, "Disable CORS")
 	disableImageAnalysis := flag.Bool("disable-image-analysis", false, "Disable AI-powered image analysis")
 	flag.Parse()
@@ -53,6 +63,7 @@ func main() {
 			EnableImageAnalysis: !*disableImageAnalysis,
 			MaxImageSizeBytes:   10 * 1024 * 1024, // 10MB
 			ImageTimeout:        15 * time.Second,
+			LinkScoreThreshold:  *scoreThreshold,
 		},
 		CORSEnabled: !*disableCORS,
 	}

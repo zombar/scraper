@@ -202,3 +202,94 @@ func truncateString(s string, maxLen int) string {
 	}
 	return s[:maxLen] + "..."
 }
+
+// ScoreContent analyzes content and assigns a quality score for ingestion
+// Returns a score (0.0-1.0), reason, categories, and malicious indicators
+func (c *Client) ScoreContent(ctx context.Context, url string, title string, content string) (score float64, reason string, categories []string, maliciousIndicators []string, err error) {
+	prompt := fmt.Sprintf(`You are a content quality assessment assistant. Analyze the following webpage and determine if it should be ingested into a knowledge database.
+
+URL: %s
+Title: %s
+Content Preview: %s
+
+Evaluate the content and assign a quality score from 0.0 to 1.0 where:
+- 1.0 = High quality, substantive content (articles, research, documentation, guides)
+- 0.5-0.9 = Moderate quality content
+- 0.0-0.4 = Low quality or inappropriate content
+
+REJECT (score 0.0-0.3) the following types of content:
+- Social media platforms (Facebook, Twitter, Instagram, LinkedIn, TikTok, Reddit, etc.)
+- Gambling websites (casinos, betting, lottery, poker sites)
+- Adult content / pornography
+- Drug marketplaces or illegal substance promotion
+- Forums and chatrooms (except high-quality technical forums like Stack Overflow)
+- General marketplaces (eBay, Amazon product pages, Craigslist, etc.)
+- Spam, clickbait, or misleading content
+- Malicious websites (phishing, malware distribution, scams)
+- Paywalled content with no preview
+- Login/signup walls with no content
+- Pure advertisement pages
+
+ACCEPT (score 0.7-1.0) the following types of content:
+- News articles and journalism
+- Educational content and tutorials
+- Research papers and academic content
+- Technical documentation
+- Blog posts with substantive content
+- Government and official resources
+- Non-profit and educational institutions
+- Business websites with informative content
+
+Provide your assessment in JSON format:
+{
+  "score": 0.0-1.0,
+  "reason": "Brief explanation of the score",
+  "categories": ["category1", "category2"],
+  "malicious_indicators": ["indicator1", "indicator2"]
+}
+
+Categories should include any applicable labels: "social_media", "gambling", "adult_content", "drugs", "forum", "marketplace", "spam", "malicious", "news", "education", "technical", "business", etc.
+
+Malicious indicators should list any suspicious patterns detected: "phishing", "malware", "scam", "misleading", etc.`,
+		url,
+		truncateString(title, 200),
+		truncateString(content, 1000))
+
+	response, err := c.Generate(ctx, prompt)
+	if err != nil {
+		return 0.0, "", nil, nil, fmt.Errorf("failed to score content: %w", err)
+	}
+
+	// Strip markdown code blocks if present
+	response = stripMarkdownCodeBlocks(response)
+
+	// Parse JSON response
+	var result struct {
+		Score               float64  `json:"score"`
+		Reason              string   `json:"reason"`
+		Categories          []string `json:"categories"`
+		MaliciousIndicators []string `json:"malicious_indicators"`
+	}
+
+	if err := json.Unmarshal([]byte(response), &result); err != nil {
+		return 0.0, "", nil, nil, fmt.Errorf("failed to parse scoring response: %w", err)
+	}
+
+	// Ensure score is within bounds
+	if result.Score < 0.0 {
+		result.Score = 0.0
+	}
+	if result.Score > 1.0 {
+		result.Score = 1.0
+	}
+
+	// Ensure slices are not nil
+	if result.Categories == nil {
+		result.Categories = []string{}
+	}
+	if result.MaliciousIndicators == nil {
+		result.MaliciousIndicators = []string{}
+	}
+
+	return result.Score, result.Reason, result.Categories, result.MaliciousIndicators, nil
+}

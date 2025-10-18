@@ -26,6 +26,7 @@ type Config struct {
 	EnableImageAnalysis bool          // Enable AI-powered image analysis
 	MaxImageSizeBytes   int64         // Maximum image size to download (bytes)
 	ImageTimeout        time.Duration // Timeout for downloading individual images
+	LinkScoreThreshold  float64       // Minimum score for link to be recommended (0.0-1.0)
 }
 
 // DefaultConfig returns default scraper configuration
@@ -37,6 +38,7 @@ func DefaultConfig() Config {
 		EnableImageAnalysis: true,              // Enable image analysis by default
 		MaxImageSizeBytes:   10 * 1024 * 1024,  // 10MB max image size
 		ImageTimeout:        15 * time.Second,  // 15s timeout per image
+		LinkScoreThreshold:  0.5,               // Default threshold for link scoring
 	}
 }
 
@@ -122,6 +124,34 @@ func (s *Scraper) Scrape(ctx context.Context, targetURL string) (*models.Scraped
 	// Extract metadata
 	metadata := extractMetadata(doc)
 
+	// Score the content (with fallback to rule-based scoring)
+	score, reason, categories, maliciousIndicators, err := s.ollamaClient.ScoreContent(ctx, targetURL, title, content)
+	var linkScore *models.LinkScore
+	if err != nil {
+		// Fallback to rule-based scoring when Ollama is unavailable
+		log.Printf("Ollama scoring failed for %s, using rule-based fallback: %v", targetURL, err)
+		score, reason, categories, maliciousIndicators = scoreContentFallback(targetURL, title, content)
+		linkScore = &models.LinkScore{
+			URL:                 targetURL,
+			Score:               score,
+			Reason:              reason,
+			Categories:          categories,
+			IsRecommended:       score >= s.config.LinkScoreThreshold,
+			MaliciousIndicators: maliciousIndicators,
+			AIUsed:              false, // Rule-based fallback
+		}
+	} else {
+		linkScore = &models.LinkScore{
+			URL:                 targetURL,
+			Score:               score,
+			Reason:              reason,
+			Categories:          categories,
+			IsRecommended:       score >= s.config.LinkScoreThreshold,
+			MaliciousIndicators: maliciousIndicators,
+			AIUsed:              true, // AI-powered scoring
+		}
+	}
+
 	// Create scraped data
 	data := &models.ScrapedData{
 		ID:             uuid.New().String(),
@@ -135,6 +165,7 @@ func (s *Scraper) Scrape(ctx context.Context, targetURL string) (*models.Scraped
 		ProcessingTime: time.Since(start).Seconds(),
 		Cached:         false,
 		Metadata:       metadata,
+		Score:          linkScore,
 	}
 
 	return data, nil
@@ -538,4 +569,212 @@ func resolveURL(base *url.URL, href string) (string, error) {
 	// Resolve against base
 	resolved := base.ResolveReference(parsed)
 	return resolved.String(), nil
+}
+
+// ScoreLinkContent fetches and scores a URL to determine if it should be ingested
+func (s *Scraper) ScoreLinkContent(ctx context.Context, targetURL string) (*models.LinkScore, error) {
+	// Validate URL
+	parsedURL, err := url.Parse(targetURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid URL: %w", err)
+	}
+	if parsedURL.Scheme != "http" && parsedURL.Scheme != "https" {
+		return nil, fmt.Errorf("URL must be http or https")
+	}
+
+	// Fetch the page
+	req, err := http.NewRequestWithContext(ctx, "GET", targetURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Scraper/1.0)")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch URL: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP error: %d %s", resp.StatusCode, resp.Status)
+	}
+
+	// Parse HTML
+	doc, err := html.Parse(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse HTML: %w", err)
+	}
+
+	// Extract title
+	title := extractTitle(doc)
+	if title == "" {
+		title = targetURL
+	}
+
+	// Extract text content
+	textContent := extractText(doc)
+
+	// Use Ollama to score the content (with fallback to rule-based scoring)
+	score, reason, categories, maliciousIndicators, err := s.ollamaClient.ScoreContent(ctx, targetURL, title, textContent)
+	aiUsed := true
+	if err != nil {
+		// Fallback to rule-based scoring when Ollama is unavailable
+		log.Printf("Ollama scoring failed, using rule-based fallback: %v", err)
+		score, reason, categories, maliciousIndicators = scoreContentFallback(targetURL, title, textContent)
+		aiUsed = false
+	}
+
+	// Determine if the link is recommended based on configurable threshold
+	isRecommended := score >= s.config.LinkScoreThreshold
+
+	linkScore := &models.LinkScore{
+		URL:                 targetURL,
+		Score:               score,
+		Reason:              reason,
+		Categories:          categories,
+		IsRecommended:       isRecommended,
+		MaliciousIndicators: maliciousIndicators,
+		AIUsed:              aiUsed,
+	}
+
+	return linkScore, nil
+}
+
+// scoreContentFallback provides rule-based content scoring when Ollama is unavailable
+func scoreContentFallback(targetURL, title, content string) (score float64, reason string, categories []string, maliciousIndicators []string) {
+	score = 0.5 // Start with neutral score
+	categories = []string{}
+	maliciousIndicators = []string{}
+	reasons := []string{}
+
+	urlLower := strings.ToLower(targetURL)
+	titleLower := strings.ToLower(title)
+	contentLower := strings.ToLower(content)
+
+	// Check for blocked content types (social media, gambling, adult, drugs, etc.)
+	blockedDomains := map[string]string{
+		"facebook.com":    "social_media",
+		"twitter.com":     "social_media",
+		"x.com":           "social_media",
+		"instagram.com":   "social_media",
+		"tiktok.com":      "social_media",
+		"reddit.com":      "forum",
+		"linkedin.com":    "social_media",
+		"pinterest.com":   "social_media",
+		"snapchat.com":    "social_media",
+		"bet":             "gambling",
+		"casino":          "gambling",
+		"poker":           "gambling",
+		"betting":         "gambling",
+		"xxx":             "adult_content",
+		"porn":            "adult_content",
+		"adult":           "adult_content",
+		"cannabis":        "drugs",
+		"weed":            "drugs",
+		"ebay.com":        "marketplace",
+		"amazon.com":      "marketplace",
+		"craigslist.org":  "marketplace",
+	}
+
+	for domain, category := range blockedDomains {
+		if strings.Contains(urlLower, domain) {
+			score = 0.1
+			categories = append(categories, category, "low_quality")
+			reasons = append(reasons, "Blocked content type detected: "+category)
+			maliciousIndicators = append(maliciousIndicators, category)
+			reason = strings.Join(reasons, "; ")
+			return
+		}
+	}
+
+	// Content length checks
+	contentLength := len(content)
+	wordCount := len(strings.Fields(content))
+
+	if contentLength < 100 {
+		score -= 0.3
+		reasons = append(reasons, "Very short content")
+		categories = append(categories, "low_quality")
+	} else if contentLength < 500 {
+		score -= 0.1
+		reasons = append(reasons, "Short content")
+	} else if contentLength > 1000 {
+		score += 0.2
+		reasons = append(reasons, "Substantial content")
+		categories = append(categories, "informational")
+	}
+
+	if wordCount < 20 {
+		score -= 0.2
+		categories = append(categories, "minimal_content")
+	}
+
+	// Check for spam indicators
+	if strings.Count(contentLower, "click here") > 2 ||
+		strings.Count(contentLower, "buy now") > 2 ||
+		strings.Count(contentLower, "limited offer") > 1 {
+		score -= 0.3
+		reasons = append(reasons, "Spam indicators detected")
+		categories = append(categories, "spam")
+		maliciousIndicators = append(maliciousIndicators, "spam_keywords")
+	}
+
+	// Check for excessive punctuation (!!!, ???, etc.)
+	exclamationCount := strings.Count(content, "!")
+	if exclamationCount > wordCount/10 && exclamationCount > 5 {
+		score -= 0.2
+		reasons = append(reasons, "Excessive punctuation")
+	}
+
+	// Check for quality indicators in URL
+	qualityDomains := []string{".edu", ".gov", ".org", "wikipedia", "arxiv", "github", "stackoverflow"}
+	for _, domain := range qualityDomains {
+		if strings.Contains(urlLower, domain) {
+			score += 0.3
+			reasons = append(reasons, "Quality domain detected")
+			categories = append(categories, "reference", "trusted_source")
+			break
+		}
+	}
+
+	// Check for technical/educational content indicators
+	technicalKeywords := []string{"documentation", "tutorial", "guide", "research", "study", "analysis", "technical"}
+	for _, keyword := range technicalKeywords {
+		if strings.Contains(titleLower, keyword) || strings.Contains(contentLower, keyword) {
+			score += 0.1
+			categories = append(categories, "technical", "educational")
+			break
+		}
+	}
+
+	// Ensure score is within bounds
+	if score < 0.0 {
+		score = 0.0
+	}
+	if score > 1.0 {
+		score = 1.0
+	}
+
+	// Build reason string
+	if len(reasons) == 0 {
+		reason = "Rule-based assessment (Ollama unavailable)"
+	} else {
+		reason = "Rule-based: " + strings.Join(reasons, "; ")
+	}
+
+	// Ensure categories is not nil
+	if len(categories) == 0 {
+		if score >= 0.6 {
+			categories = []string{"informational"}
+		} else {
+			categories = []string{"general"}
+		}
+	}
+
+	// Ensure maliciousIndicators is not nil
+	if maliciousIndicators == nil {
+		maliciousIndicators = []string{}
+	}
+
+	return score, reason, categories, maliciousIndicators
 }

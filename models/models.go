@@ -15,6 +15,7 @@ type ScrapedData struct {
 	ProcessingTime float64      `json:"processing_time_seconds"`
 	Cached         bool         `json:"cached"`
 	Metadata       PageMetadata `json:"metadata"`
+	Score          *LinkScore   `json:"score,omitempty"` // Quality score for the URL
 }
 
 // ImageInfo contains information about an extracted image
@@ -57,4 +58,26 @@ type OllamaVisionRequest struct {
 	Prompt string   `json:"prompt"`
 	Images []string `json:"images"` // base64 encoded images
 	Stream bool     `json:"stream"`
+}
+
+// LinkScore represents a scored link with quality assessment
+type LinkScore struct {
+	URL               string   `json:"url"`
+	Score             float64  `json:"score"`              // 0.0 to 1.0, higher is better quality
+	Reason            string   `json:"reason"`             // Explanation for the score
+	Categories        []string `json:"categories"`         // Detected categories (e.g., "social_media", "spam")
+	IsRecommended       bool     `json:"is_recommended"`     // Whether the link is recommended for ingestion
+	MaliciousIndicators []string `json:"malicious_indicators,omitempty"` // Any detected malicious patterns
+	AIUsed              bool     `json:"ai_used"`            // Whether AI (Ollama) was used for scoring (true) or rule-based fallback (false)
+}
+
+// ScoreRequest represents a request to score a URL
+type ScoreRequest struct {
+	URL string `json:"url"`
+}
+
+// ScoreResponse represents a response containing link score
+type ScoreResponse struct {
+	URL   string    `json:"url"`
+	Score LinkScore `json:"score"`
 }

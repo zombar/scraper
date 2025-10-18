@@ -83,6 +83,7 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/scrape", s.handleScrape)
 	s.mux.HandleFunc("/api/scrape/batch", s.handleBatchScrape)
 	s.mux.HandleFunc("/api/extract-links", s.handleExtractLinks)
+	s.mux.HandleFunc("/api/score", s.handleScore)
 	s.mux.HandleFunc("/api/data/", s.handleData) // Handles /api/data/{id}
 	s.mux.HandleFunc("/api/data", s.handleList)
 	s.mux.HandleFunc("/api/images/search", s.handleImageSearch)
@@ -251,6 +252,42 @@ func (s *Server) handleExtractLinks(w http.ResponseWriter, r *http.Request) {
 		URL:   req.URL,
 		Links: links,
 		Count: len(links),
+	}
+
+	respondJSON(w, http.StatusOK, response)
+}
+
+// handleScore handles content scoring requests
+func (s *Server) handleScore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req models.ScoreRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if req.URL == "" {
+		respondError(w, http.StatusBadRequest, "url is required")
+		return
+	}
+
+	// Score the content
+	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Minute)
+	defer cancel()
+
+	score, err := s.scraper.ScoreLinkContent(ctx, req.URL)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, fmt.Sprintf("scoring failed: %v", err))
+		return
+	}
+
+	response := models.ScoreResponse{
+		URL:   req.URL,
+		Score: *score,
 	}
 
 	respondJSON(w, http.StatusOK, response)
