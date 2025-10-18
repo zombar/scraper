@@ -50,6 +50,31 @@ var migrations = []Migration{
 			DROP TABLE IF EXISTS schema_migrations;
 		`,
 	},
+	{
+		Version: 3,
+		Name:    "create_images_table",
+		Up: `
+			CREATE TABLE IF NOT EXISTS images (
+				id TEXT PRIMARY KEY,
+				scrape_id TEXT NOT NULL,
+				url TEXT NOT NULL,
+				alt_text TEXT,
+				summary TEXT,
+				tags TEXT,
+				base64_data TEXT,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (scrape_id) REFERENCES scraped_data(id) ON DELETE CASCADE
+			);
+			CREATE INDEX IF NOT EXISTS idx_images_scrape_id ON images(scrape_id);
+			CREATE INDEX IF NOT EXISTS idx_images_created_at ON images(created_at);
+		`,
+		Down: `
+			DROP INDEX IF EXISTS idx_images_created_at;
+			DROP INDEX IF EXISTS idx_images_scrape_id;
+			DROP TABLE IF EXISTS images;
+		`,
+	},
 }
 
 // Migrate runs all pending migrations

@@ -219,6 +219,96 @@ curl -X DELETE http://localhost:8080/api/data/550e8400-e29b-41d4-a716-4466554400
 
 ---
 
+### Get Image by ID
+
+Retrieve a specific image by its UUID.
+
+**Request:**
+```http
+GET /api/images/{id}
+```
+
+**Response:**
+```json
+{
+  "id": "550e8400-e29b-41d4-a716-446655440000",
+  "url": "https://example.com/image.jpg",
+  "alt_text": "Example image",
+  "summary": "AI-generated 4-5 sentence description of the image...",
+  "tags": ["example", "illustration", "diagram"],
+  "base64_data": "iVBORw0KGgoAAAANSUhEUgAAAAEA..."
+}
+```
+
+**Error Response (404):**
+```json
+{
+  "error": "image not found"
+}
+```
+
+**Example:**
+```bash
+curl http://localhost:8080/api/images/550e8400-e29b-41d4-a716-446655440000
+```
+
+---
+
+### Search Images by Tags
+
+Search for images using fuzzy tag matching (case-insensitive substring matching).
+
+**Request:**
+```http
+POST /api/images/search
+Content-Type: application/json
+
+{
+  "tags": ["cat", "animal"]
+}
+```
+
+**Parameters:**
+- `tags` (array of strings, required) - Tags to search for (fuzzy matching)
+
+**Response:**
+```json
+{
+  "images": [
+    {
+      "id": "550e8400-e29b-41d4-a716-446655440000",
+      "url": "https://example.com/cat.jpg",
+      "alt_text": "A cat photo",
+      "summary": "Image shows a domestic cat...",
+      "tags": ["cat", "animal", "pet"],
+      "base64_data": "iVBORw0KGgoAAAANSUhEUgAAAAEA..."
+    },
+    {
+      "id": "660e8400-e29b-41d4-a716-446655440001",
+      "url": "https://example.com/wildlife.jpg",
+      "alt_text": "Wildlife scene",
+      "summary": "Image depicts various animals in nature...",
+      "tags": ["animals", "wildlife", "nature"],
+      "base64_data": "iVBORw0KGgoAAAANSUhEUgAAAAEA..."
+    }
+  ],
+  "count": 2
+}
+```
+
+**Fuzzy Matching:** Searches are case-insensitive and match substrings. For example:
+- Searching for "cat" will match images with tags: "cat", "cats", "wildcat", "scatter"
+- Searching for "anim" will match images with tags: "animal", "animation", "animals"
+
+**Example:**
+```bash
+curl -X POST http://localhost:8080/api/images/search \
+  -H "Content-Type: application/json" \
+  -d '{"tags": ["cat", "dog"]}'
+```
+
+---
+
 ### List All Data
 
 List all scraped data with pagination.
@@ -300,18 +390,22 @@ Information about an extracted image.
 
 ```go
 type ImageInfo struct {
-    URL     string   `json:"url"`
-    AltText string   `json:"alt_text"`
-    Summary string   `json:"summary"`
-    Tags    []string `json:"tags"`
+    ID         string   `json:"id,omitempty"`
+    URL        string   `json:"url"`
+    AltText    string   `json:"alt_text"`
+    Summary    string   `json:"summary"`
+    Tags       []string `json:"tags"`
+    Base64Data string   `json:"base64_data,omitempty"`
 }
 ```
 
 **Fields:**
+- `id` - Unique UUID identifier for the image
 - `url` - Absolute image URL
 - `alt_text` - Alt text from `<img>` tag
 - `summary` - AI-generated 4-5 sentence description
 - `tags` - AI-generated tags for categorization
+- `base64_data` - Base64-encoded image data (omitted in list responses for performance)
 
 ### PageMetadata
 
@@ -548,10 +642,36 @@ CREATE TABLE scraped_data (
 );
 ```
 
+### images Table
+
+Images are stored separately from scraped data for efficient querying and retrieval.
+
+```sql
+CREATE TABLE images (
+    id TEXT PRIMARY KEY,
+    scrape_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    alt_text TEXT,
+    summary TEXT,
+    tags TEXT,
+    base64_data TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (scrape_id) REFERENCES scraped_data(id) ON DELETE CASCADE
+);
+```
+
+**Note:** The `tags` field stores a JSON array of strings. Images are automatically deleted when their parent scraped data is deleted (cascade delete).
+
 ### Indexes
 
+**scraped_data:**
 - `idx_scraped_data_url` on `url`
 - `idx_scraped_data_created_at` on `created_at`
+
+**images:**
+- `idx_images_scrape_id` on `scrape_id`
+- `idx_images_created_at` on `created_at`
 
 ### Migrations
 
