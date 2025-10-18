@@ -14,10 +14,9 @@ import (
 )
 
 const (
-	DefaultBaseURL     = "http://localhost:11434"
-	DefaultModel       = "llama3.2"
-	DefaultVisionModel = "llama3.2-vision"
-	DefaultTimeout     = 120 * time.Second
+	DefaultBaseURL = "http://localhost:11434"
+	DefaultModel   = "llama3.2"
+	DefaultTimeout = 120 * time.Second
 )
 
 // Client is a client for interacting with Ollama
@@ -88,7 +87,7 @@ func (c *Client) GenerateWithVision(ctx context.Context, prompt string, imageDat
 	encodedImage := base64.StdEncoding.EncodeToString(imageData)
 
 	reqBody := models.OllamaVisionRequest{
-		Model:  DefaultVisionModel,
+		Model:  c.model,
 		Prompt: prompt,
 		Images: []string{encodedImage},
 		Stream: false,
@@ -159,6 +158,9 @@ Format your response as JSON with the following structure:
 		return "", nil, fmt.Errorf("failed to analyze image: %w", err)
 	}
 
+	// Strip markdown code blocks if present
+	response = stripMarkdownCodeBlocks(response)
+
 	// Parse JSON response
 	var result struct {
 		Summary string   `json:"summary"`
@@ -171,6 +173,26 @@ Format your response as JSON with the following structure:
 	}
 
 	return result.Summary, result.Tags, nil
+}
+
+// stripMarkdownCodeBlocks removes markdown code block wrappers from a string
+// This handles cases like ```json\n{...}\n``` and returns just the {...} content
+func stripMarkdownCodeBlocks(s string) string {
+	// Trim whitespace
+	s = string(bytes.TrimSpace([]byte(s)))
+
+	// Check if string starts with markdown code block
+	if len(s) > 3 && s[:3] == "```" {
+		// Find the end of the opening ```[language] line
+		lines := bytes.Split([]byte(s), []byte("\n"))
+		if len(lines) > 2 {
+			// Remove first line (```json or similar) and last line (```)
+			result := bytes.Join(lines[1:len(lines)-1], []byte("\n"))
+			return string(bytes.TrimSpace(result))
+		}
+	}
+
+	return s
 }
 
 // truncateString truncates a string to the specified length

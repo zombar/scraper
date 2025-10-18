@@ -228,6 +228,88 @@ func TestAnalyzeImageInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestAnalyzeImageWithMarkdownWrappedJSON(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Return JSON wrapped in markdown code blocks (common LLM behavior)
+		resp := models.OllamaResponse{
+			Response: "```json\n{\n  \"summary\": \"George Santos speaking at the Capitol\",\n  \"tags\": [\"politics\", \"capitol\", \"speech\"]\n}\n```",
+			Done:     true,
+		}
+		json.NewEncoder(w).Encode(resp)
+	}))
+	defer server.Close()
+
+	client := NewClient(server.URL, "test-model")
+	ctx := context.Background()
+
+	imageData := []byte("fake image data")
+	summary, tags, err := client.AnalyzeImage(ctx, imageData, "")
+
+	if err != nil {
+		t.Fatalf("AnalyzeImage failed: %v", err)
+	}
+
+	// Should successfully parse the JSON after stripping markdown
+	expectedSummary := "George Santos speaking at the Capitol"
+	if summary != expectedSummary {
+		t.Errorf("Expected summary %q, got: %q", expectedSummary, summary)
+	}
+
+	expectedTags := []string{"politics", "capitol", "speech"}
+	if len(tags) != len(expectedTags) {
+		t.Errorf("Expected %d tags, got %d", len(expectedTags), len(tags))
+	}
+
+	for i, tag := range expectedTags {
+		if i >= len(tags) || tags[i] != tag {
+			t.Errorf("Expected tag %q at index %d, got: %v", tag, i, tags)
+		}
+	}
+}
+
+func TestStripMarkdownCodeBlocks(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{
+			name:  "json wrapped in markdown",
+			input: "```json\n{\"key\": \"value\"}\n```",
+			want:  "{\"key\": \"value\"}",
+		},
+		{
+			name:  "plain json",
+			input: "{\"key\": \"value\"}",
+			want:  "{\"key\": \"value\"}",
+		},
+		{
+			name:  "markdown without language specifier",
+			input: "```\n{\"key\": \"value\"}\n```",
+			want:  "{\"key\": \"value\"}",
+		},
+		{
+			name:  "multiline json in markdown",
+			input: "```json\n{\n  \"summary\": \"Test\",\n  \"tags\": [\"a\", \"b\"]\n}\n```",
+			want:  "{\n  \"summary\": \"Test\",\n  \"tags\": [\"a\", \"b\"]\n}",
+		},
+		{
+			name:  "plain text",
+			input: "This is plain text",
+			want:  "This is plain text",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := stripMarkdownCodeBlocks(tt.input)
+			if result != tt.want {
+				t.Errorf("stripMarkdownCodeBlocks() = %q, want %q", result, tt.want)
+			}
+		})
+	}
+}
+
 func TestTruncateString(t *testing.T) {
 	tests := []struct {
 		name   string
