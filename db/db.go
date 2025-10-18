@@ -360,7 +360,7 @@ func (db *DB) SearchImagesByTags(searchTags []string) ([]*models.ImageInfo, erro
 	}
 	defer rows.Close()
 
-	var results []*models.ImageInfo
+	results := []*models.ImageInfo{}
 	for rows.Next() {
 		var (
 			imageID    string

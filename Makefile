@@ -28,18 +28,20 @@ help:
 	@echo "  make run-api PORT=3000 DB=./data/scraper.db"
 	@echo "  make test-coverage"
 
-# Build the CLI application
-build: build-cli
+# Build the CLI application (default to API for integration tests)
+build: build-api
 
 build-cli:
 	@echo "Building CLI scraper..."
 	@go build -o scraper-bin -ldflags="-s -w"
+	@chmod +x scraper-bin
 	@echo "Build complete: scraper-bin"
 
 # Build the API server
 build-api:
 	@echo "Building API server..."
 	@go build -o scraper-api -ldflags="-s -w" ./cmd/api
+	@chmod +x scraper-api
 	@echo "Build complete: scraper-api"
 
 # Build both
