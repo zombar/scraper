@@ -85,6 +85,8 @@ func (s *Server) registerRoutes() {
 	s.mux.HandleFunc("/api/extract-links", s.handleExtractLinks)
 	s.mux.HandleFunc("/api/data/", s.handleData) // Handles /api/data/{id}
 	s.mux.HandleFunc("/api/data", s.handleList)
+	s.mux.HandleFunc("/api/images/search", s.handleImageSearch)
+	s.mux.HandleFunc("/api/images/", s.handleImage) // Handles /api/images/{id}
 }
 
 // Start starts the API server
@@ -506,4 +508,75 @@ func respondError(w http.ResponseWriter, status int, message string) {
 	respondJSON(w, status, map[string]string{
 		"error": message,
 	})
+}
+
+// handleImage handles GET operations for individual images
+func (s *Server) handleImage(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	// Extract ID from path
+	path := strings.TrimPrefix(r.URL.Path, "/api/images/")
+	if path == "" {
+		respondError(w, http.StatusBadRequest, "id is required")
+		return
+	}
+
+	image, err := s.db.GetImageByID(path)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	if image == nil {
+		respondError(w, http.StatusNotFound, "image not found")
+		return
+	}
+
+	respondJSON(w, http.StatusOK, image)
+}
+
+// ImageSearchRequest represents a search request for images by tags
+type ImageSearchRequest struct {
+	Tags []string `json:"tags"`
+}
+
+// ImageSearchResponse represents the response for image search
+type ImageSearchResponse struct {
+	Images []*models.ImageInfo `json:"images"`
+	Count  int                 `json:"count"`
+}
+
+// handleImageSearch handles POST requests to search images by tags
+func (s *Server) handleImageSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		respondError(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	var req ImageSearchRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	if len(req.Tags) == 0 {
+		respondError(w, http.StatusBadRequest, "tags array is required and must not be empty")
+		return
+	}
+
+	images, err := s.db.SearchImagesByTags(req.Tags)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "database error")
+		return
+	}
+
+	response := ImageSearchResponse{
+		Images: images,
+		Count:  len(images),
+	}
+
+	respondJSON(w, http.StatusOK, response)
 }

@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	_ "modernc.org/sqlite"
@@ -42,6 +43,11 @@ func New(config Config) (*DB, error) {
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
+	// Enable foreign key constraints (required for SQLite)
+	if _, err := conn.Exec("PRAGMA foreign_keys = ON"); err != nil {
+		return nil, fmt.Errorf("failed to enable foreign keys: %w", err)
+	}
+
 	// Configure connection pool
 	conn.SetMaxOpenConns(25)
 	conn.SetMaxIdleConns(5)
@@ -64,13 +70,20 @@ func (db *DB) Close() error {
 
 // SaveScrapedData saves scraped data to the database
 func (db *DB) SaveScrapedData(data *models.ScrapedData) error {
+	// Begin transaction to save both scraped data and images atomically
+	tx, err := db.conn.Begin()
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
 	// Serialize the data to JSON
 	jsonData, err := json.Marshal(data)
 	if err != nil {
 		return fmt.Errorf("failed to marshal data: %w", err)
 	}
 
-	// Insert or replace
+	// Insert or replace scraped data
 	query := `
 		INSERT INTO scraped_data (id, url, data, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?)
@@ -80,7 +93,7 @@ func (db *DB) SaveScrapedData(data *models.ScrapedData) error {
 			updated_at = excluded.updated_at
 	`
 
-	_, err = db.conn.Exec(
+	_, err = tx.Exec(
 		query,
 		data.ID,
 		data.URL,
@@ -91,6 +104,52 @@ func (db *DB) SaveScrapedData(data *models.ScrapedData) error {
 
 	if err != nil {
 		return fmt.Errorf("failed to save data: %w", err)
+	}
+
+	// Delete old images for this scrape_id (if re-scraping)
+	_, err = tx.Exec("DELETE FROM images WHERE scrape_id = ?", data.ID)
+	if err != nil {
+		return fmt.Errorf("failed to delete old images: %w", err)
+	}
+
+	// Save images to separate table
+	for _, image := range data.Images {
+		if image.ID == "" {
+			// Skip images without IDs (shouldn't happen, but be defensive)
+			continue
+		}
+
+		tagsJSON, err := json.Marshal(image.Tags)
+		if err != nil {
+			return fmt.Errorf("failed to marshal image tags: %w", err)
+		}
+
+		imageQuery := `
+			INSERT INTO images (id, scrape_id, url, alt_text, summary, tags, base64_data, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+		`
+
+		_, err = tx.Exec(
+			imageQuery,
+			image.ID,
+			data.ID,
+			image.URL,
+			image.AltText,
+			image.Summary,
+			string(tagsJSON),
+			image.Base64Data,
+			time.Now(),
+			time.Now(),
+		)
+
+		if err != nil {
+			return fmt.Errorf("failed to save image %s: %w", image.ID, err)
+		}
+	}
+
+	// Commit transaction
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit transaction: %w", err)
 	}
 
 	return nil
@@ -212,4 +271,198 @@ func (db *DB) URLExists(url string) (bool, error) {
 		return false, fmt.Errorf("failed to check URL existence: %w", err)
 	}
 	return exists, nil
+}
+
+// SaveImage saves an image to the database
+func (db *DB) SaveImage(image *models.ImageInfo, scrapeID string) error {
+	tagsJSON, err := json.Marshal(image.Tags)
+	if err != nil {
+		return fmt.Errorf("failed to marshal tags: %w", err)
+	}
+
+	query := `
+		INSERT INTO images (id, scrape_id, url, alt_text, summary, tags, base64_data, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+	`
+
+	_, err = db.conn.Exec(
+		query,
+		image.ID,
+		scrapeID,
+		image.URL,
+		image.AltText,
+		image.Summary,
+		string(tagsJSON),
+		image.Base64Data,
+		time.Now(),
+		time.Now(),
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed to save image: %w", err)
+	}
+
+	return nil
+}
+
+// GetImageByID retrieves an image by its ID
+func (db *DB) GetImageByID(id string) (*models.ImageInfo, error) {
+	var (
+		imageID     string
+		url         string
+		altText     string
+		summary     string
+		tagsJSON    string
+		base64Data  string
+	)
+
+	query := "SELECT id, url, alt_text, summary, tags, base64_data FROM images WHERE id = ?"
+	err := db.conn.QueryRow(query, id).Scan(&imageID, &url, &altText, &summary, &tagsJSON, &base64Data)
+
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("failed to query image: %w", err)
+	}
+
+	var tags []string
+	if tagsJSON != "" && tagsJSON != "null" {
+		if err := json.Unmarshal([]byte(tagsJSON), &tags); err != nil {
+			return nil, fmt.Errorf("failed to unmarshal tags: %w", err)
+		}
+	}
+
+	image := &models.ImageInfo{
+		ID:         imageID,
+		URL:        url,
+		AltText:    altText,
+		Summary:    summary,
+		Tags:       tags,
+		Base64Data: base64Data,
+	}
+
+	return image, nil
+}
+
+// SearchImagesByTags searches for images by tags using fuzzy matching
+// Returns images that contain any of the search tags (case-insensitive)
+func (db *DB) SearchImagesByTags(searchTags []string) ([]*models.ImageInfo, error) {
+	if len(searchTags) == 0 {
+		return []*models.ImageInfo{}, nil
+	}
+
+	// Query all images
+	query := "SELECT id, url, alt_text, summary, tags, base64_data FROM images ORDER BY created_at DESC"
+	rows, err := db.conn.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query images: %w", err)
+	}
+	defer rows.Close()
+
+	var results []*models.ImageInfo
+	for rows.Next() {
+		var (
+			imageID    string
+			url        string
+			altText    string
+			summary    string
+			tagsJSON   string
+			base64Data string
+		)
+
+		if err := rows.Scan(&imageID, &url, &altText, &summary, &tagsJSON, &base64Data); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		var tags []string
+		if tagsJSON != "" && tagsJSON != "null" {
+			if err := json.Unmarshal([]byte(tagsJSON), &tags); err != nil {
+				continue // Skip malformed entries
+			}
+		}
+
+		// Fuzzy match: check if any search tag is contained in any image tag (case-insensitive)
+		matched := false
+		for _, searchTag := range searchTags {
+			searchTagLower := strings.ToLower(searchTag)
+			for _, tag := range tags {
+				tagLower := strings.ToLower(tag)
+				if strings.Contains(tagLower, searchTagLower) || strings.Contains(searchTagLower, tagLower) {
+					matched = true
+					break
+				}
+			}
+			if matched {
+				break
+			}
+		}
+
+		if matched {
+			image := &models.ImageInfo{
+				ID:         imageID,
+				URL:        url,
+				AltText:    altText,
+				Summary:    summary,
+				Tags:       tags,
+				Base64Data: base64Data,
+			}
+			results = append(results, image)
+		}
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	return results, nil
+}
+
+// GetImagesByScrapeID retrieves all images associated with a scrape ID
+func (db *DB) GetImagesByScrapeID(scrapeID string) ([]*models.ImageInfo, error) {
+	query := "SELECT id, url, alt_text, summary, tags, base64_data FROM images WHERE scrape_id = ? ORDER BY created_at"
+	rows, err := db.conn.Query(query, scrapeID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query images: %w", err)
+	}
+	defer rows.Close()
+
+	var results []*models.ImageInfo
+	for rows.Next() {
+		var (
+			imageID    string
+			url        string
+			altText    string
+			summary    string
+			tagsJSON   string
+			base64Data string
+		)
+
+		if err := rows.Scan(&imageID, &url, &altText, &summary, &tagsJSON, &base64Data); err != nil {
+			return nil, fmt.Errorf("failed to scan row: %w", err)
+		}
+
+		var tags []string
+		if tagsJSON != "" && tagsJSON != "null" {
+			if err := json.Unmarshal([]byte(tagsJSON), &tags); err != nil {
+				return nil, fmt.Errorf("failed to unmarshal tags: %w", err)
+			}
+		}
+
+		image := &models.ImageInfo{
+			ID:         imageID,
+			URL:        url,
+			AltText:    altText,
+			Summary:    summary,
+			Tags:       tags,
+			Base64Data: base64Data,
+		}
+		results = append(results, image)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating rows: %w", err)
+	}
+
+	return results, nil
 }

@@ -489,6 +489,9 @@ func (s *Scraper) processImages(ctx context.Context, images []models.ImageInfo) 
 	for i, img := range images {
 		log.Printf("Processing image %d/%d: %s", i+1, len(images), img.URL)
 
+		// Generate UUID for the image
+		img.ID = uuid.New().String()
+
 		// Download the image
 		imageData, err := s.downloadImage(ctx, img.URL)
 		if err != nil {

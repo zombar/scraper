@@ -47,6 +47,11 @@ func TestMigrations(t *testing.T) {
 	if err != nil {
 		t.Errorf("Failed to query schema_migrations table: %v", err)
 	}
+
+	err = db.conn.QueryRow("SELECT COUNT(*) FROM images").Scan(&count)
+	if err != nil {
+		t.Errorf("Failed to query images table: %v", err)
+	}
 }
 
 func TestSaveAndGetByID(t *testing.T) {
@@ -419,5 +424,214 @@ func TestFileDatabase(t *testing.T) {
 
 	if retrieved.Title != "File Test" {
 		t.Errorf("Title mismatch: got %s, want File Test", retrieved.Title)
+	}
+}
+
+func TestSaveAndGetImages(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Create scraped data with images
+	data := &models.ScrapedData{
+		ID:             "scrape-with-images",
+		URL:            "https://example.com/images",
+		Title:          "Page with Images",
+		Content:        "Content",
+		Images: []models.ImageInfo{
+			{
+				ID:         "img-1",
+				URL:        "https://example.com/image1.jpg",
+				AltText:    "Test image 1",
+				Summary:    "A test image",
+				Tags:       []string{"test", "example", "photo"},
+				Base64Data: "base64data1",
+			},
+			{
+				ID:         "img-2",
+				URL:        "https://example.com/image2.jpg",
+				AltText:    "Test image 2",
+				Summary:    "Another test image",
+				Tags:       []string{"illustration", "diagram"},
+				Base64Data: "base64data2",
+			},
+		},
+		FetchedAt:      time.Now(),
+		ProcessingTime: 1.0,
+	}
+
+	// Save data (should also save images)
+	err := db.SaveScrapedData(data)
+	if err != nil {
+		t.Fatalf("Failed to save data: %v", err)
+	}
+
+	// Get image by ID
+	img1, err := db.GetImageByID("img-1")
+	if err != nil {
+		t.Fatalf("Failed to get image by ID: %v", err)
+	}
+
+	if img1 == nil {
+		t.Fatal("Image not found")
+	}
+
+	if img1.URL != "https://example.com/image1.jpg" {
+		t.Errorf("Image URL mismatch: got %s", img1.URL)
+	}
+
+	if len(img1.Tags) != 3 {
+		t.Errorf("Expected 3 tags, got %d", len(img1.Tags))
+	}
+
+	// Get images by scrape ID
+	images, err := db.GetImagesByScrapeID("scrape-with-images")
+	if err != nil {
+		t.Fatalf("Failed to get images by scrape ID: %v", err)
+	}
+
+	if len(images) != 2 {
+		t.Errorf("Expected 2 images, got %d", len(images))
+	}
+}
+
+func TestSearchImagesByTags(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Create scraped data with various images
+	data := &models.ScrapedData{
+		ID:      "scrape-for-search",
+		URL:     "https://example.com/search",
+		Title:   "Search Test",
+		Content: "Content",
+		Images: []models.ImageInfo{
+			{
+				ID:      "img-cat",
+				URL:     "https://example.com/cat.jpg",
+				AltText: "Cat photo",
+				Tags:    []string{"cat", "animal", "pet"},
+			},
+			{
+				ID:      "img-dog",
+				URL:     "https://example.com/dog.jpg",
+				AltText: "Dog photo",
+				Tags:    []string{"dog", "animal", "pet"},
+			},
+			{
+				ID:      "img-car",
+				URL:     "https://example.com/car.jpg",
+				AltText: "Car photo",
+				Tags:    []string{"car", "vehicle", "transportation"},
+			},
+		},
+		FetchedAt:      time.Now(),
+		ProcessingTime: 1.0,
+	}
+
+	err := db.SaveScrapedData(data)
+	if err != nil {
+		t.Fatalf("Failed to save data: %v", err)
+	}
+
+	// Test exact match
+	results, err := db.SearchImagesByTags([]string{"cat"})
+	if err != nil {
+		t.Fatalf("Failed to search images: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Errorf("Expected 1 result for 'cat', got %d", len(results))
+	}
+
+	// Test fuzzy match (should match both cat and car due to substring)
+	results, err = db.SearchImagesByTags([]string{"ca"})
+	if err != nil {
+		t.Fatalf("Failed to search images: %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Errorf("Expected 2 results for fuzzy 'ca', got %d", len(results))
+	}
+
+	// Test multiple tags
+	results, err = db.SearchImagesByTags([]string{"animal", "vehicle"})
+	if err != nil {
+		t.Fatalf("Failed to search images: %v", err)
+	}
+
+	if len(results) != 3 {
+		t.Errorf("Expected 3 results for multiple tags, got %d", len(results))
+	}
+
+	// Test case-insensitive search
+	results, err = db.SearchImagesByTags([]string{"CAT"})
+	if err != nil {
+		t.Fatalf("Failed to search images: %v", err)
+	}
+
+	if len(results) != 1 {
+		t.Errorf("Expected 1 result for case-insensitive 'CAT', got %d", len(results))
+	}
+
+	// Test empty tags
+	results, err = db.SearchImagesByTags([]string{})
+	if err != nil {
+		t.Fatalf("Failed to search with empty tags: %v", err)
+	}
+
+	if len(results) != 0 {
+		t.Errorf("Expected 0 results for empty tags, got %d", len(results))
+	}
+}
+
+func TestImageCascadeDelete(t *testing.T) {
+	db := setupTestDB(t)
+	defer db.Close()
+
+	// Create scraped data with images
+	data := &models.ScrapedData{
+		ID:      "cascade-test",
+		URL:     "https://example.com/cascade",
+		Title:   "Cascade Test",
+		Content: "Content",
+		Images: []models.ImageInfo{
+			{
+				ID:      "cascade-img",
+				URL:     "https://example.com/cascade.jpg",
+				AltText: "Cascade test image",
+				Tags:    []string{"test"},
+			},
+		},
+		FetchedAt:      time.Now(),
+		ProcessingTime: 1.0,
+	}
+
+	err := db.SaveScrapedData(data)
+	if err != nil {
+		t.Fatalf("Failed to save data: %v", err)
+	}
+
+	// Verify image exists
+	img, err := db.GetImageByID("cascade-img")
+	if err != nil {
+		t.Fatalf("Failed to get image: %v", err)
+	}
+	if img == nil {
+		t.Fatal("Image should exist")
+	}
+
+	// Delete scraped data
+	err = db.DeleteByID("cascade-test")
+	if err != nil {
+		t.Fatalf("Failed to delete scraped data: %v", err)
+	}
+
+	// Verify image was also deleted (cascade)
+	img, err = db.GetImageByID("cascade-img")
+	if err != nil {
+		t.Fatalf("Failed to get image after cascade: %v", err)
+	}
+	if img != nil {
+		t.Error("Image should have been deleted via cascade")
 	}
 }

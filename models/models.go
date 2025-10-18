@@ -19,6 +19,7 @@ type ScrapedData struct {
 
 // ImageInfo contains information about an extracted image
 type ImageInfo struct {
+	ID         string   `json:"id,omitempty"` // UUID for the image
 	URL        string   `json:"url"`
 	AltText    string   `json:"alt_text"`
 	Summary    string   `json:"summary"`
