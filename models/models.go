@@ -19,10 +19,11 @@ type ScrapedData struct {
 
 // ImageInfo contains information about an extracted image
 type ImageInfo struct {
-	URL     string   `json:"url"`
-	AltText string   `json:"alt_text"`
-	Summary string   `json:"summary"`
-	Tags    []string `json:"tags"`
+	URL        string   `json:"url"`
+	AltText    string   `json:"alt_text"`
+	Summary    string   `json:"summary"`
+	Tags       []string `json:"tags"`
+	Base64Data string   `json:"base64_data,omitempty"` // Base64 encoded image data
 }
 
 // PageMetadata contains additional metadata about the scraped page

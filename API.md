@@ -39,10 +39,11 @@ Information about an extracted image.
 
 ```go
 type ImageInfo struct {
-    URL     string   `json:"url"`
-    AltText string   `json:"alt_text"`
-    Summary string   `json:"summary"`
-    Tags    []string `json:"tags"`
+    URL        string   `json:"url"`
+    AltText    string   `json:"alt_text"`
+    Summary    string   `json:"summary"`
+    Tags       []string `json:"tags"`
+    Base64Data string   `json:"base64_data,omitempty"`
 }
 ```
 
@@ -51,6 +52,7 @@ type ImageInfo struct {
 - `AltText`: Alt text from the `<img>` tag
 - `Summary`: 4-5 sentence AI-generated description
 - `Tags`: AI-generated tags for categorization
+- `Base64Data`: Base64 encoded image data (omitted from JSON if empty)
 
 #### `PageMetadata`
 
@@ -114,10 +116,9 @@ type OllamaVisionRequest struct {
 
 ```go
 const (
-    DefaultBaseURL     = "http://localhost:11434"
-    DefaultModel       = "llama3.2"
-    DefaultVisionModel = "llama3.2-vision"
-    DefaultTimeout     = 120 * time.Second
+    DefaultBaseURL = "http://localhost:11434"
+    DefaultModel   = "llama3.2"
+    DefaultTimeout = 120 * time.Second
 )
 ```
 

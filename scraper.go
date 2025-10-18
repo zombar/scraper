@@ -2,8 +2,11 @@ package scraper
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -17,17 +20,23 @@ import (
 
 // Config contains scraper configuration
 type Config struct {
-	HTTPTimeout   time.Duration
-	OllamaBaseURL string
-	OllamaModel   string
+	HTTPTimeout         time.Duration
+	OllamaBaseURL       string
+	OllamaModel         string
+	EnableImageAnalysis bool          // Enable AI-powered image analysis
+	MaxImageSizeBytes   int64         // Maximum image size to download (bytes)
+	ImageTimeout        time.Duration // Timeout for downloading individual images
 }
 
 // DefaultConfig returns default scraper configuration
 func DefaultConfig() Config {
 	return Config{
-		HTTPTimeout:   30 * time.Second,
-		OllamaBaseURL: ollama.DefaultBaseURL,
-		OllamaModel:   ollama.DefaultModel,
+		HTTPTimeout:         30 * time.Second,
+		OllamaBaseURL:       ollama.DefaultBaseURL,
+		OllamaModel:         ollama.DefaultModel,
+		EnableImageAnalysis: true,              // Enable image analysis by default
+		MaxImageSizeBytes:   10 * 1024 * 1024,  // 10MB max image size
+		ImageTimeout:        15 * time.Second,  // 15s timeout per image
 	}
 }
 
@@ -103,6 +112,9 @@ func (s *Scraper) Scrape(ctx context.Context, targetURL string) (*models.Scraped
 
 	// Extract images
 	images := extractImages(doc, parsedURL)
+
+	// Process images (download and analyze if enabled)
+	images = s.processImages(ctx, images)
 
 	// Extract links with Ollama sanitization
 	links := s.extractLinksWithOllama(ctx, doc, parsedURL, title, content)
@@ -421,6 +433,95 @@ func extractMetadata(n *html.Node) models.PageMetadata {
 	}
 	f(n)
 	return metadata
+}
+
+// downloadImage downloads an image from a URL with size and timeout limits
+func (s *Scraper) downloadImage(ctx context.Context, imageURL string) ([]byte, error) {
+	// Create request with timeout context
+	ctx, cancel := context.WithTimeout(ctx, s.config.ImageTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, "GET", imageURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("User-Agent", "Mozilla/5.0 (compatible; Scraper/1.0)")
+
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch image: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("HTTP error: %d %s", resp.StatusCode, resp.Status)
+	}
+
+	// Check content length if available
+	if resp.ContentLength > s.config.MaxImageSizeBytes {
+		return nil, fmt.Errorf("image too large: %d bytes (max: %d)", resp.ContentLength, s.config.MaxImageSizeBytes)
+	}
+
+	// Read with size limit
+	limitedReader := io.LimitReader(resp.Body, s.config.MaxImageSizeBytes+1)
+	imageData, err := io.ReadAll(limitedReader)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read image data: %w", err)
+	}
+
+	// Check if we exceeded the limit
+	if int64(len(imageData)) > s.config.MaxImageSizeBytes {
+		return nil, fmt.Errorf("image too large: exceeds %d bytes", s.config.MaxImageSizeBytes)
+	}
+
+	return imageData, nil
+}
+
+// processImages downloads and analyzes images if image analysis is enabled
+func (s *Scraper) processImages(ctx context.Context, images []models.ImageInfo) []models.ImageInfo {
+	if !s.config.EnableImageAnalysis {
+		log.Printf("Image analysis disabled, returning %d images without analysis", len(images))
+		return images
+	}
+
+	processedImages := make([]models.ImageInfo, 0, len(images))
+
+	for i, img := range images {
+		log.Printf("Processing image %d/%d: %s", i+1, len(images), img.URL)
+
+		// Download the image
+		imageData, err := s.downloadImage(ctx, img.URL)
+		if err != nil {
+			log.Printf("Failed to download image %s: %v", img.URL, err)
+			// Keep the image info but without analysis
+			processedImages = append(processedImages, img)
+			continue
+		}
+
+		log.Printf("Downloaded image %s (%d bytes)", img.URL, len(imageData))
+
+		// Store base64 encoded image data
+		img.Base64Data = base64.StdEncoding.EncodeToString(imageData)
+
+		// Analyze the image with Ollama
+		summary, tags, err := s.ollamaClient.AnalyzeImage(ctx, imageData, img.AltText)
+		if err != nil {
+			log.Printf("Failed to analyze image %s: %v", img.URL, err)
+			// Keep the image info with base64 data but without analysis
+			processedImages = append(processedImages, img)
+			continue
+		}
+
+		// Update image info with analysis results
+		img.Summary = summary
+		img.Tags = tags
+		processedImages = append(processedImages, img)
+
+		log.Printf("Successfully analyzed image %s (summary: %d chars, tags: %d)",
+			img.URL, len(summary), len(tags))
+	}
+
+	return processedImages
 }
 
 // resolveURL resolves a potentially relative URL against a base URL

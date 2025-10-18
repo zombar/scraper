@@ -36,6 +36,7 @@ func main() {
 	ollamaURL := flag.String("ollama-url", defaultOllamaURL, "Ollama base URL")
 	ollamaModel := flag.String("ollama-model", defaultOllamaModel, "Ollama model to use")
 	disableCORS := flag.Bool("disable-cors", false, "Disable CORS")
+	disableImageAnalysis := flag.Bool("disable-image-analysis", false, "Disable AI-powered image analysis")
 	flag.Parse()
 
 	// Create server configuration
@@ -46,9 +47,12 @@ func main() {
 			DSN:    *dbPath,
 		},
 		ScraperConfig: scraper.Config{
-			HTTPTimeout:   30 * time.Second,
-			OllamaBaseURL: *ollamaURL,
-			OllamaModel:   *ollamaModel,
+			HTTPTimeout:         30 * time.Second,
+			OllamaBaseURL:       *ollamaURL,
+			OllamaModel:         *ollamaModel,
+			EnableImageAnalysis: !*disableImageAnalysis,
+			MaxImageSizeBytes:   10 * 1024 * 1024, // 10MB
+			ImageTimeout:        15 * time.Second,
 		},
 		CORSEnabled: !*disableCORS,
 	}
