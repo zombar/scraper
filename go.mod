@@ -1,8 +1,6 @@
 module github.com/docutag/scraper
 
-go 1.24.0
-
-toolchain go1.24.9
+go 1.25.0
 
 require (
 	github.com/aws/aws-sdk-go-v2 v1.39.5
@@ -17,9 +15,9 @@ require (
 	github.com/rwcarlsen/goexif v0.0.0-20190401172101-9e8deecbddbd
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.46.1
 	go.opentelemetry.io/otel v1.38.0
-	golang.org/x/image v0.32.0
+	golang.org/x/image v0.38.0
 	golang.org/x/net v0.46.0
-	golang.org/x/text v0.30.0
+	golang.org/x/text v0.35.0
 )
 
 require (
